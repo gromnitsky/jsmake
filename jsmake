@@ -10,7 +10,7 @@ class FirstTokenizer {
 	this.tokens = [
 	    { type: 'comment', re: '#.*$' },
 	    { type: 'recipe',  re: '\t.*$' },
-	    { type: 'identifier', re: '[^=:#]+' },
+	    { type: 'identifier', re: '[^=:]+' },
 	    { type: 'op',  re: '[=:]'},
 	    { type: 'lvalue',  re: '.*$' },
 	]
@@ -42,9 +42,77 @@ class FirstTokenizer {
     }
 }
 
+class Parser {
+    constructor(tokens) {
+	this.tokens = tokens
+	this.vars = {}
+	this.rules = []
+    }
+
+    parse() {
+	let skip = -1
+	for (let idx = 0; idx < this.tokens.length; ++idx) {
+	    if (skip > idx) continue
+
+	    let token = this.tokens[idx]
+	    let token_next = this.tokens[idx+1]
+//	    console.log(token, token_next)
+
+	    if (token.type === 'identifier' && token_next.type === 'op') {
+		skip = token_next.val === '=' ? this.variable(idx) : this.rule(idx)
+//		console.log(skip, this.rules, this.vars)
+	    } else if (token.type === 'identifier') {
+		throw new Error(`${token.pos}: displaced ${token.type}`)
+	    } else if (token.type === 'comment') {
+		// TODO: annotate the last rule
+	    } else {
+		throw new Error(`${token.pos}: unexpected ${token.type}`)
+	    }
+	}
+    }
+
+    rule(idx) {
+	let r = {
+	    target: this.tokens[idx].val,
+	}
+	idx += 2
+	if (this.tokens[idx] && this.tokens[idx].type === 'lvalue') {
+	    r.deps = this.tokens[idx].val
+	    idx++
+	}
+
+	let ri = idx
+	let recipes = []
+	while (this.tokens[ri] && this.tokens[ri].type === 'recipe') {
+	    recipes.push(this.tokens[ri].val)
+	    ri++
+	}
+
+	if (recipes.length) r.recipes = recipes
+	this.rules.push(r)
+	return ri
+    }
+
+    variable(idx) {
+	let name = this.tokens[idx].val
+	idx += 2
+	if (this.tokens[idx] && this.tokens[idx].type !== 'lvalue') {
+	    this.vars[name] = ''
+	    return idx
+	}
+	this.vars[name] = this.tokens[idx] ? this.tokens[idx].val : ''
+	return idx+1
+    }
+}
+
 let concat_stream = concat( input => {
     let tokens = new FirstTokenizer(input.toString()).tokenize()
     console.log(tokens)
+
+    let parser = new Parser(tokens)
+    parser.parse()
+    console.log(parser.vars)
+    console.log(parser.rules)
 })
 
 process.stdin.pipe(concat_stream)
