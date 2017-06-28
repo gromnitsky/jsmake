@@ -1,7 +1,5 @@
 #!/usr/bin/env node
 
-let concat = require('concat-stream')
-
 class FirstTokenizer {
     constructor(input) {
 	// TODO: join lines separated by '\'
@@ -54,19 +52,15 @@ class Parser {
 	for (let idx = 0; idx < this.tokens.length; ++idx) {
 	    if (skip > idx) continue
 
-	    let token = this.tokens[idx]
-	    let token_next = this.tokens[idx+1]
-//	    console.log(token, token_next)
+	    let cur = this.tokens[idx]
+	    let next = this.tokens[idx+1]
 
-	    if (token.type === 'identifier' && token_next.type === 'op') {
-		skip = token_next.val === '=' ? this.variable(idx) : this.rule(idx)
-//		console.log(skip, this.rules, this.vars)
-	    } else if (token.type === 'identifier') {
-		throw new Error(`${token.pos}: displaced ${token.type}`)
-	    } else if (token.type === 'comment') {
+	    if (cur.type === 'identifier' && next && next.type === 'op') {
+		skip = next.val === '=' ? this.variable(idx) : this.rule(idx)
+	    } else if (cur.type === 'comment') {
 		// TODO: annotate the last rule
 	    } else {
-		throw new Error(`${token.pos}: unexpected ${token.type}`)
+		throw new Error(`${cur.pos}: unexpected ${cur.type}: ${cur.val}`)
 	    }
 	}
     }
@@ -105,14 +99,22 @@ class Parser {
     }
 }
 
-let concat_stream = concat( input => {
-    let tokens = new FirstTokenizer(input.toString()).tokenize()
-    console.log(tokens)
+exports.FirstTokenizer = FirstTokenizer
+exports.Parser = Parser
 
-    let parser = new Parser(tokens)
-    parser.parse()
-    console.log(parser.vars)
-    console.log(parser.rules)
-})
+// Main
+if (process.argv[1] === __filename) {
+    let concat = require('concat-stream')
 
-process.stdin.pipe(concat_stream)
+    let concat_stream = concat( input => {
+	let tokens = new FirstTokenizer(input.toString()).tokenize()
+	console.log(tokens)
+
+	let parser = new Parser(tokens)
+	parser.parse()
+	console.log(parser.vars)
+	console.log(parser.rules)
+    })
+
+    process.stdin.pipe(concat_stream)
+}
