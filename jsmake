@@ -1,0 +1,50 @@
+#!/usr/bin/env node
+
+let concat = require('concat-stream')
+
+class FirstTokenizer {
+    constructor(input) {
+	// TODO: join lines separated by '\'
+	this.input = input.split("\n")
+
+	this.tokens = [
+	    { type: 'comment', re: '#.*$' },
+	    { type: 'recipe',  re: '\t.*$' },
+	    { type: 'identifier', re: '[^=:#]+' },
+	    { type: 'op',  re: '[=:]'},
+	    { type: 'lvalue',  re: '.*$' },
+	]
+	this.line = 0
+    }
+
+    tokenize() {
+	let r = []
+	for (let line of this.input) {
+	    this.line++
+	    let column = 0
+	    if (line.match(/^\s*$/)) continue
+
+	    while (line.length) {
+		for (let token of this.tokens) {
+		    if (!line.length) break
+
+		    let m = line.match(`^${token.re}`)
+		    if (!m) continue
+		    let skip = m.index + m[0].length
+		    line = line.slice(0, m.index) + line.slice(skip)
+		    r.push({type: token.type, val: m[0],
+			    pos: `${this.line}:${column}:${column + skip - 1}`})
+		    column += skip
+		}
+	    }
+	}
+	return r
+    }
+}
+
+let concat_stream = concat( input => {
+    let tokens = new FirstTokenizer(input.toString()).tokenize()
+    console.log(tokens)
+})
+
+process.stdin.pipe(concat_stream)
