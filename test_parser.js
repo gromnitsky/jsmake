@@ -10,6 +10,39 @@ suite('FirstTokenizer', function() {
 	assert.deepEqual(new make.FirstTokenizer('').tokenize(), [])
     })
 
+    test('newlines w/ backslashes', function() {
+	assert.deepEqual(new make.FirstTokenizer(`
+foo = bar \\
+  baz = \\
+a=b
+c=d
+`).tokenize(), [{
+    "pos": "4:0:3",
+    "type": "identifier",
+    "val": "foo ",
+}, {
+    "pos": "4:4:4",
+    "type": "op",
+    "val": "=",
+}, {
+    "pos": "4:5:20",
+    "type": "rvalue",
+    "val": " bar   baz = a=b",
+}, {
+    "pos": "5:0:0",
+    "type": "identifier",
+    "val": "c",
+}, {
+    "pos": "5:1:1",
+    "type": "op",
+    "val": "=",
+}, {
+    "pos": "5:2:2",
+    "type": "rvalue",
+    "val": "d",
+}])
+    })
+
     test('vars', function() {
 	assert.deepEqual(new make.FirstTokenizer(`
 # a comment
@@ -29,7 +62,7 @@ foo =
     "val": "="
 }, {
     "pos": "3:5:8",
-    "type": "lvalue",
+    "type": "rvalue",
     "val": " bar"
 }, {
     "pos": "4:0:3",
@@ -65,7 +98,7 @@ bar: foo
     "val": ":",
 }, {
     "pos": "3:4:7",
-    "type": "lvalue",
+    "type": "rvalue",
     "val": " foo",
 }, {
     "pos": "4:0:2",

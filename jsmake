@@ -2,7 +2,6 @@
 
 class FirstTokenizer {
     constructor(input) {
-	// TODO: join lines separated by '\'
 	this.input = input.split("\n")
 
 	this.tokens = [
@@ -10,17 +9,25 @@ class FirstTokenizer {
 	    { type: 'recipe',  re: '\t.*$' },
 	    { type: 'identifier', re: '[^=:]+' },
 	    { type: 'op',  re: '[=:]'},
-	    { type: 'lvalue',  re: '.*$' },
+	    { type: 'rvalue',  re: '.*$' },
 	]
 	this.line = 0
     }
 
     tokenize() {
 	let r = []
+	let line_prev = ''
 	for (let line of this.input) {
 	    this.line++
 	    let column = 0
 	    if (line.match(/^\s*$/)) continue
+	    if (line.match(/\\$/)) { // join lines that end with `\`
+		line_prev += line.replace(/\\$/, '')
+		continue
+	    } else {
+		line = line_prev + line
+		line_prev = ''
+	    }
 
 	    while (line.length) {
 		for (let token of this.tokens) {
@@ -29,7 +36,7 @@ class FirstTokenizer {
 		    let m = line.match(`^${token.re}`)
 		    if (!m) continue
 		    let skip = m.index + m[0].length
-		    line = line.slice(0, m.index) + line.slice(skip)
+		    line = line.slice(skip)
 		    r.push({type: token.type, val: m[0],
 			    pos: `${this.line}:${column}:${column + skip - 1}`})
 		    column += skip
@@ -70,7 +77,7 @@ class Parser {
 	    target: this.tokens[idx].val,
 	}
 	idx += 2
-	if (this.tokens[idx] && this.tokens[idx].type === 'lvalue') {
+	if (this.tokens[idx] && this.tokens[idx].type === 'rvalue') {
 	    r.deps = this.tokens[idx].val
 	    idx++
 	}
@@ -90,7 +97,7 @@ class Parser {
     variable(idx) {
 	let name = this.tokens[idx].val
 	idx += 2
-	if (this.tokens[idx] && this.tokens[idx].type !== 'lvalue') {
+	if (this.tokens[idx] && this.tokens[idx].type !== 'rvalue') {
 	    this.vars[name] = ''
 	    return idx
 	}
