@@ -203,6 +203,65 @@ w = $(q)
 	    new make.Expander(parser).expand()
 	}, /var 'q' references itself/)
     })
+
+    test('dir', function() {
+	let tokens = new make.FirstTokenizer('q = q  $(dir /a/b)').tokenize()
+	let parser = new make.Parser(tokens)
+	parser.parse()
+	new make.Expander(parser, make.Functions).expand()
+	assert.deepEqual(parser.vars, { q: 'q  /a/' })
+    })
+
+    test('refs', function() {
+	let tokens = new make.FirstTokenizer(`
+dirs = $(dir  /foo/bar    /home/bob) $(bar)   $(dir /etc/news)
+bar = $(subst /qqq,/bar,-/qqq/www)
+
+qqqq:
+	@echo $(dirs)
+
+q = name
+$(q) = Bob $(bar)
+
+$(q):
+	@echo $(name)
+`).tokenize()
+	let parser = new make.Parser(tokens)
+	parser.parse()
+	new make.Expander(parser, make.Functions).expand()
+	assert.deepEqual(parser.vars, {
+            "bar": "-/bar/www",
+            "dirs": "/foo/ /home/ -/bar/www   /etc/",
+            "name": "Bob -/bar/www",
+            "q": "name",
+      	})
+	assert.deepEqual(parser.rules, [
+	    { target: 'qqqq', recipes: [ '@echo $(dirs)' ] },
+	    { target: 'name', recipes: [ '@echo $(name)' ] } ])
+    })
+
+    test('recursions', function() {
+	let tokens = new make.FirstTokenizer(`
+f=1$(q$(w$(e))) $(e)
+z:
+	@echo '-$(f)-'
+e=E
+wE=WE
+qWE=QWE
+`).tokenize()
+	let parser = new make.Parser(tokens)
+	parser.parse()
+	new make.Expander(parser, make.Functions).expand()
+	assert.deepEqual(parser.vars, {
+            "e": "E",
+            "f": "1QWE E",
+            "qWE": "QWE",
+            "wE": "WE",
+     	})
+	assert.deepEqual(parser.rules, [
+	    { target: 'z', recipes: [ "@echo '-$(f)-'" ] }
+	])
+    })
 })
 
 suite('Functions', function() {
