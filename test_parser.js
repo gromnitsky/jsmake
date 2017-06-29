@@ -3,6 +3,7 @@
 'use strict';
 
 let assert = require('assert')
+let util = require('util')
 let make = require('./jsmake')
 
 suite('FirstTokenizer', function() {
@@ -19,7 +20,7 @@ c=d
 `).tokenize(), [{
     "pos": "4:0:3",
     "type": "identifier",
-    "val": "foo ",
+    "val": "foo",
 }, {
     "pos": "4:4:4",
     "type": "op",
@@ -27,7 +28,7 @@ c=d
 }, {
     "pos": "4:5:20",
     "type": "rvalue",
-    "val": " bar   baz = a=b",
+    "val": "bar   baz = a=b",
 }, {
     "pos": "5:0:0",
     "type": "identifier",
@@ -55,7 +56,7 @@ foo =
 }, {
     "pos": "3:0:3",
     "type": "identifier",
-    "val": "foo "
+    "val": "foo"
 }, {
     "pos": "3:4:4",
     "type": "op",
@@ -63,11 +64,11 @@ foo =
 }, {
     "pos": "3:5:8",
     "type": "rvalue",
-    "val": " bar"
+    "val": "bar"
 }, {
     "pos": "4:0:3",
     "type": "identifier",
-    "val": "foo ",
+    "val": "foo",
 }, {
     "pos": "4:4:4",
     "type": "op",
@@ -99,11 +100,11 @@ bar: foo
 }, {
     "pos": "3:4:7",
     "type": "rvalue",
-    "val": " foo",
+    "val": "foo",
 }, {
     "pos": "4:0:2",
     "type": "recipe",
-    "val": "\tid",
+    "val": "id",
 }])
     })
 
@@ -125,7 +126,7 @@ baz=1
 `).tokenize()
 	let parser = new make.Parser(tokens)
 	parser.parse()
-	assert.deepEqual(parser.vars, {'foo ': '', baz: 1})
+	assert.deepEqual(parser.vars, {'foo': '', baz: 1})
 	assert.deepEqual(parser.rules, [])
     })
 
@@ -153,8 +154,8 @@ b: c
 	    target: 'a'
 	}, {
 	    target: 'b',
-	    deps: ' c',
-	    recipes: [ "\t1", "\t2" ]
+	    deps: 'c',
+	    recipes: [ "1", "2" ]
 	}])
     })
 
@@ -179,4 +180,42 @@ foo=
 	}, /unexpected recipe/)
     })
 
+})
+
+// FIXME
+suite('Expander', function() {
+    test('vars', function() {
+	let tokens = new make.FirstTokenizer(`
+bar = bbb
+foo = 1 $(bar) $(z $(zz)) $(empty) 2
+`).tokenize()
+	let parser = new make.Parser(tokens)
+	parser.parse()
+//	console.log(parser.vars)
+	let expander = new make.Expander(parser)
+	expander.expand()
+//	console.log(expander.vars)
+    })
+
+    test('highly recursive', function() {
+	let tokens = new make.FirstTokenizer(`
+foo = $($($(x)) z  x c) d
+`).tokenize()
+	let parser = new make.Parser(tokens)
+	parser.parse()
+//	console.log(util.inspect(parser.vars, {depth: null}))
+	let expander = new make.Expander(parser)
+	expander.expand()
+//	console.log(expander.vars)
+    })
+
+})
+
+suite('Functions', function() {
+    test('dir', function() {
+	assert.deepEqual(make.Functions.dir('/foo/bar /baz'), '/foo/ /')
+    })
+    test('subst', function() {
+	assert.deepEqual(make.Functions.subst('ee', 'EE', 'feet on the street'), 'fEEt on the strEEt')
+    })
 })

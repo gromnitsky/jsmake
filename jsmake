@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 let util = require('util')
+let path = require('path')
 
 class FirstTokenizer {
     constructor(input) {
@@ -39,7 +40,7 @@ class FirstTokenizer {
 		    if (!m) continue
 		    let skip = m.index + m[0].length
 		    line = line.slice(skip)
-		    r.push({type: token.type, val: m[0],
+		    r.push({type: token.type, val: m[0].trim(),
 			    pos: `${this.line}:${column}:${column + skip - 1}`})
 		    column += skip
 		}
@@ -108,9 +109,22 @@ class Parser {
     }
 }
 
+let Functions = {
+    dir: (names) => {
+	return names.split(/\s+/).map( val => {
+	    let p = path.dirname(val)
+	    return p === '/' ? p : p + '/'
+	}).join(' ')
+    },
+    subst: (from, to, text) => {
+	return text.replace(new RegExp(from, 'g'), to)
+    }
+}
+
 class Expander {
-    constructor(parser) {
+    constructor(parser, functions) {
 	this.parser = parser
+	this.functions = functions || {}
 
 	this.input = null
 	this.tok = null
@@ -123,7 +137,7 @@ class Expander {
 	if (!this.input.length) return this.tok = null // end of input
 
 	let lexems = [
-		/^[^$(),]+/,
+		/^[^$()]+/,
 		/^./
 	]
 	for (let val of lexems) {
@@ -180,11 +194,26 @@ class Expander {
     // crazy recursive
     _expand(arr) {
 	return arr.map( item => {
+	    // a non-expandable portion
 	    if (item.type !== '$') return (item.val || item)
 
+	    // turtles all the way down
 	    let r = this._expand(item.val)
-	    let ev = this.parser.vars[r]
-	    return ev ? ev : '?' // FIXME
+	    let defined = this.parser.vars[r]
+	    // the value of the variable we've found can be expanded too
+	    if (defined) return this._expand(this.parse(defined))
+
+	    // check r in the list of known functions; TODO: refactor out
+	    let fname = r.split(' ')[0]
+	    if (fname in this.functions) {
+		// remove the leading spaces only for the 1st arg
+		// before passing them all to the function
+		let fargs = r.split(' ').slice(1).join(' ').
+		    trimLeft().split(',')
+		return this.functions[fname].apply(this, fargs)
+	    }
+
+	    return '⍰'		// FIXME
 	}).join('')
     }
 
@@ -222,6 +251,7 @@ class Expander {
 exports.FirstTokenizer = FirstTokenizer
 exports.Parser = Parser
 exports.Expander = Expander
+exports.Functions = Functions
 
 // Main
 if (process.argv[1] === __filename) {
@@ -237,7 +267,7 @@ if (process.argv[1] === __filename) {
 	console.log(parser.rules)
 
 	console.log('')
-	let expander = new Expander(parser)
+	let expander = new Expander(parser, Functions)
 	expander.expand()
 	console.log(parser.vars)
 	console.log(parser.rules)
