@@ -182,33 +182,27 @@ foo=
 
 })
 
-// FIXME
 suite('Expander', function() {
-    test('vars', function() {
+    test('circle 1', function() {
 	let tokens = new make.FirstTokenizer(`
-bar = bbb
-foo = 1 $(bar) $(z $(zz)) $(empty) 2
+q = $(w)
+w = $(q)
 `).tokenize()
 	let parser = new make.Parser(tokens)
 	parser.parse()
-//	console.log(parser.vars)
-	let expander = new make.Expander(parser)
-	expander.expand()
-//	console.log(expander.vars)
+	assert.throws( () => {
+	    new make.Expander(parser).expand()
+	}, /var 'q' references itself/)
     })
 
-    test('highly recursive', function() {
-	let tokens = new make.FirstTokenizer(`
-foo = $($($(x)) z  x c) d
-`).tokenize()
+    test('circle 2', function() {
+	let tokens = new make.FirstTokenizer('q = $(q)').tokenize()
 	let parser = new make.Parser(tokens)
 	parser.parse()
-//	console.log(util.inspect(parser.vars, {depth: null}))
-	let expander = new make.Expander(parser)
-	expander.expand()
-//	console.log(expander.vars)
+	assert.throws( () => {
+	    new make.Expander(parser).expand()
+	}, /var 'q' references itself/)
     })
-
 })
 
 suite('Functions', function() {
