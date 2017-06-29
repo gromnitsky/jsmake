@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+let util = require('util')
+
 class FirstTokenizer {
     constructor(input) {
 	this.input = input.split("\n")
@@ -106,8 +108,120 @@ class Parser {
     }
 }
 
+class Expander {
+    constructor(parser) {
+	this.parser = parser
+
+	this.input = null
+	this.tok = null
+	this.vars = {}
+	this.rules = []
+    }
+
+    advance() {
+	this.input = this.input.replace(/^\s*/, '')
+	if (!this.input.length) return this.tok = null // end of input
+
+	let lexems = [
+		/^[^$(),]+/,
+		/^./
+	]
+	for (let val of lexems) {
+	    let m = this.input.match(val)
+	    if (m) {
+		this.tok = m[0]
+		this.input = this.input.slice(m[0].length)
+		return this.tok
+	    }
+	}
+	throw new Error(`lexer failure: ${this.input}`)
+    }
+
+    parse(str) {
+	this.input = str
+	let r = []
+
+	this.advance()
+	while (this.tok !== null) {
+	    if (this.tok === '$') r.push(this.func())
+	    else {
+		r.push({ val: this.tok })
+		this.advance()
+	    }
+	}
+	return r
+    }
+
+    // updates this.parser.{vars,rules}
+    expand() {
+	let e_vars = {}
+	for (let varname in this.parser.vars) {
+	    let val = this.parser.vars[varname]
+
+	    let e_varname = this._expand(this.parse(varname))
+	    let e_val = this._expand(this.parse(val))
+	    e_vars[e_varname] = e_val
+	}
+	this.parser.vars = e_vars
+
+	let e_rules = []
+	for (let rule of this.parser.rules) {
+	    let r = { target: this._expand(this.parse(rule.target)) }
+	    if (rule.deps) r.deps = this._expand(this.parse(rule.deps))
+	    if (rule.recipes) {
+		// rules are being expanded during the invocation, not here
+		r.recipes = rule.recipes
+	    }
+	    e_rules.push(r)
+	}
+	this.parser.rules = e_rules
+    }
+
+    // crazy recursive
+    _expand(arr) {
+	return arr.map( item => {
+	    if (item.type !== '$') return (item.val || item)
+
+	    let r = this._expand(item.val)
+	    let ev = this.parser.vars[r]
+	    return ev ? ev : '?' // FIXME
+	}).join('')
+    }
+
+    func() {
+	let r = []
+	this.eat('$')
+	this.eat('(')
+
+	if (this.tok === '$') r.push(this.func())
+
+	if (this.tok === ')') {
+	    this.advance()
+	    return r
+	}
+
+	r.push(this.tok)
+	this.advance()
+
+	if (this.tok === '$') r.push(this.func())
+
+	this.eat(')')
+	return {
+	    type: '$',
+	    val: r
+	}
+    }
+
+    eat(expected_token) {
+	if (this.tok !== expected_token)
+	    throw new Error(`saw ${this.tok}, expected ${expected_token}`)
+	this.advance()
+    }
+}
+
 exports.FirstTokenizer = FirstTokenizer
 exports.Parser = Parser
+exports.Expander = Expander
 
 // Main
 if (process.argv[1] === __filename) {
@@ -119,6 +233,12 @@ if (process.argv[1] === __filename) {
 
 	let parser = new Parser(tokens)
 	parser.parse()
+	console.log(parser.vars)
+	console.log(parser.rules)
+
+	console.log('')
+	let expander = new Expander(parser)
+	expander.expand()
 	console.log(parser.vars)
 	console.log(parser.rules)
     })
