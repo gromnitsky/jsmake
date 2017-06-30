@@ -137,14 +137,6 @@ class Expander {
     }
 
     advance() {
-	this.tok_prefix = null
-	let m = this.input.match(/^\s*/)
-	if (m) {
-	    // trim whitespaces but save them for the future
-	    // restoring them in #func() & #_expand()
-	    this.input = this.input.trimLeft()
-	    this.tok_prefix = m[0]
-	}
 	if (!this.input.length) return this.tok = null // end of input
 
 	let lexems = [
@@ -205,8 +197,6 @@ class Expander {
     // crazy recursive
     _expand(arr, wantedby) {
 	return arr.map( item => {
-	    let prefix = item.prefix ? item.prefix : ''
-
 	    // a non-expandable portion
 	    if (item.type !== '$') return (item.val || item)
 
@@ -217,7 +207,7 @@ class Expander {
 	    if (defined) {
 		if (wantedby && wantedby === r)
 		    throw new Error(`var '${r}' references itself`)
-		return prefix + this._expand(this.parse(defined), wantedby)
+		return this._expand(this.parse(defined), wantedby)
 	    }
 
 	    // check r in the list of known functions; TODO: refactor out
@@ -227,7 +217,7 @@ class Expander {
 		// before passing them all to the function
 		let fargs = r.split(' ').slice(1).join(' ').
 		    trimLeft().split(',')
-		return prefix + this.functions[fname].apply(this, fargs)
+		return this.functions[fname].apply(this, fargs)
 	    }
 
 	    return '?'		// FIXME
@@ -235,10 +225,7 @@ class Expander {
     }
 
     func() {
-	let prefix = this.tok_prefix ? this.tok_prefix : null
-	let result = (val) => {
-	    return { type: '$', val, prefix }
-	}
+	let result = (val) => ({ type: '$', val})
 	let r = []
 
 	this.eat('$')
