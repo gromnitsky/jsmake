@@ -5,24 +5,32 @@ let path = require('path')
 
 let inspect = v => util.inspect(v, {depth:null})
 
-class FToken {
-    constructor(tag, val, src, line, col, row) {
-	this.tag = tag
-	this.val = val
-	this.src = src
-	this.line = line
+class Location {
+    constructor(src, line, col, row) {
+	this.src = src || '-'
+	this.line = line || -999
 	this.col = col
 	this.row = row
     }
+    toString() {
+	return [this.src, this.line, this.col, this.row].
+	    filter( v => v !== undefined).join(':')
+    }
+}
 
-    pos() { return `${this.src}:${this.line}:${this.col}:${this.row}` }
-    inspect() { return `${this.tag}:${this.val}:${this.pos()}`}
+class FToken {
+    constructor(location, tag, val) {
+	this.tag = tag
+	this.val = val
+	this.location = location
+    }
+    inspect() { return [this.location, this.tag, this.val].join('\t') }
 }
 
 class FirstTokenizer {
     // input -- a string to tokenize
     // src   -- a file name from which the input came from
-    constructor(input, src = '-') {
+    constructor(input, src) {
 	this.input = input.split("\n")
 
 	this.tokens = [
@@ -61,14 +69,45 @@ class FirstTokenizer {
 		    let skip = m.index + m[0].length
 		    line = line.slice(skip)
 
-		    r.push(new FToken(token.type, m[0].trim(), this.src,
-				      this.line, column, column + skip - 1))
+		    r.push(new FToken(new Location(this.src, this.line,
+						   column, column + skip - 1),
+				      token.type, m[0].trim()))
 		    column += skip
 		}
 	    }
 	}
 	return r
     }
+}
+
+class Rule {
+    constructor(location, target, deps = '', recipes = []) {
+	this.location = location
+	if (location) {
+	    delete this.location.col
+	    delete this.location.row
+	}
+	this.target = target
+	this.deps = deps
+	this.recipes = recipes
+    }
+    inspect() {
+	return `Rule(${this.location}): ${this.target}: ${this.deps}` +
+	    (this.recipes.length ? `\n>>\t${this.recipes.join("\n\t")}` : '')
+    }
+}
+
+class Var {
+    constructor(location, name, value = '') {
+	this.location = location
+	if (location) {
+	    delete this.location.col
+	    delete this.location.row
+	}
+	this.name = name
+	this.value = value
+    }
+    inspect() { return `Var(${this.location}): ${this.name}='${this.value}'` }
 }
 
 class Parser {
@@ -91,20 +130,17 @@ class Parser {
 	    } else if (cur.tag === 'comment') {
 		// TODO: annotate the last rule
 	    } else {
-		throw new Error(`${cur.pos()}: unexpected ${cur.tag}: ${cur.val}`)
+		throw new Error(`${cur.location}: unexpected ${cur.tag}: ${cur.val}`)
 	    }
 	}
     }
 
     rule(idx) {
-	let r = {
-	    target: this.tokens[idx].val,
-	    line: this.tokens[idx].line,
-	    src: this.tokens[idx].src
-	}
+	let entry = new Rule(this.tokens[idx].location, this.tokens[idx].val)
+
 	idx += 2
 	if (this.tokens[idx] && this.tokens[idx].tag === 'rvalue') {
-	    r.deps = this.tokens[idx].val
+	    entry.deps = this.tokens[idx].val
 	    idx++
 	}
 
@@ -115,24 +151,21 @@ class Parser {
 	    ri++
 	}
 
-	if (recipes.length) r.recipes = recipes
-	this.rules.push(r)
+	if (recipes.length) entry.recipes = recipes
+	this.rules.push(entry)
+
 	return ri
     }
 
-    // { varname: { val: 'foo', line: 123 } }
     variable(idx) {
-	let name = this.tokens[idx].val
-	this.vars[name] = {
-	    val: '',
-	    line: this.tokens[idx].line,
-	    src: this.tokens[idx].src
-	}
-	idx += 2
-	if (this.tokens[idx] && this.tokens[idx].tag !== 'rvalue')
-	    return idx
+	let variable = new Var(this.tokens[idx].location, this.tokens[idx].val)
+	this.vars[variable.name] = variable
 
-	this.vars[name].val = this.tokens[idx] ? this.tokens[idx].val : ''
+	idx += 2
+	if (this.tokens[idx] && this.tokens[idx].tag !== 'rvalue') return idx
+
+	if (this.tokens[idx])
+	    this.vars[variable.name].value = this.tokens[idx].val
 	return idx+1
     }
 }
@@ -156,15 +189,10 @@ class Expander {
 
 	this.input = null
 	this.tok = null
-
-	this.location = {
-	    line: -100000,
-	    src: 'unset'
-	}
+	this.location = new Location()
     }
 
-    loc() { return `${this.location.src}:${this.location.line}` }
-    log(msg) { console.error(`${this.loc()}:`, 'warning:', msg) }
+    log(msg) { console.error(`${this.location}:`, msg) }
 
     advance() {
 	if (!this.input.length) return this.tok = null // end of input
@@ -184,11 +212,11 @@ class Expander {
 	throw new Error(`lexer failure: ${this.input}`)
     }
 
-    parse(obj) {
-	if (typeof obj === 'string') throw new Error('Expander#parse()')
-	this.input = obj.val
-	if (obj.src) this.location.src = obj.src
-	if (obj.line) this.location.line = obj.line
+    parse(variable) {
+	if (!(variable instanceof Var)) throw new Error('Expander#parse()')
+
+	this.input = variable.value
+	if (variable.location) this.location = variable.location
 	let r = []
 
 	this.advance()
@@ -202,39 +230,36 @@ class Expander {
 	return r
     }
 
-    // updates this.parser.{vars,rules}
+    // rewrites this.parser.{vars,rules} with expanded values
     expand() {
-	let e_vars = {}
-	for (let varname in this.parser.vars) {
-	    let val = this.parser.vars[varname]
+	this.expand_vars()
+	this.expand_rules()
+    }
 
-	    let e_varname = this._expand(this.parse({val: varname,
-						     line: val.line,
-						     src: val.src}))
-	    let e_val = this._expand(this.parse(val), e_varname)
-	    e_vars[e_varname] = {
-		val: e_val,
-		src: val.src,
-		line: val.line
-	    }
+    expand_vars() {
+	let e_vars = {}
+	for (let key in this.parser.vars) {
+	    let variable = this.parser.vars[key]
+
+	    let e_key = this._expand(this.parse(new Var(variable.location,
+							'dummy1', key)))
+	    let e_val = this._expand(this.parse(variable), e_key)
+	    e_vars[e_key] = new Var(variable.location, e_key, e_val)
 	}
 	this.parser.vars = e_vars
+    }
 
+    expand_rules() {
 	let e_rules = []
 	for (let rule of this.parser.rules) {
-	    let r = {
-		target: this._expand(this.parse({
-		    val: rule.target,
-		    src: rule.src,
-		    line: rule.line,
-		}))
-	    }
-	    if (rule.deps) r.deps = this._expand(this.parse({ val: rule.deps }))
+	    let e_target = this._expand(this.parse(new Var(rule.location, 'dummy2', rule.target)))
+	    let entry = new Rule(rule.location, e_target)
+	    if (rule.deps) entry.deps = this._expand(this.parse(new Var(null, 'dummy3', rule.deps)))
 	    if (rule.recipes) {
 	    	// rules are being expanded during the invocation, not here
-	    	r.recipes = rule.recipes
+	    	entry.recipes = rule.recipes
 	    }
-	    e_rules.push(r)
+	    e_rules.push(entry)
 	}
 	this.parser.rules = e_rules
     }
@@ -251,7 +276,7 @@ class Expander {
 	    // the value of the variable we've found can be expanded too
 	    if (defined) {
 		if (wantedby && wantedby === r)
-		    throw new Error(`${this.loc()}: var '${r}' references itself`)
+		    throw new Error(`${this.location}: var '${r}' references itself`)
 		return this._expand(this.parse(defined), wantedby)
 	    }
 
@@ -285,7 +310,7 @@ class Expander {
 
 	while (this.tok !== ')') {
 	    if (this.tok === null)
-		throw new Error(`${this.loc()}: expected ')'`)
+		throw new Error(`${this.location}: expected ')'`)
 
 	    if (this.tok === '$') r.push(this.func())
 	    else {
@@ -300,14 +325,17 @@ class Expander {
 
     eat(expected_token) {
 	if (this.tok !== expected_token)
-	    throw new Error(`${this.loc()}: saw '${this.tok}', expected '${expected_token}'`)
+	    throw new Error(`${this.location}: saw '${this.tok}', expected '${expected_token}'`)
 	this.advance()
     }
 }
 
+exports.Var = Var
+exports.Rule = Rule
 exports.FirstTokenizer = FirstTokenizer
 exports.Parser = Parser
 exports.Expander = Expander
+
 exports.Functions = Functions
 
 // Main

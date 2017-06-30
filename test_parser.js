@@ -19,12 +19,12 @@ a=b
 c=d
 `).tokenize().map( val => val.inspect())
 	assert.deepEqual(t, [
-            "id:foo:-:4:0:3",
-            "op:=:-:4:4:4",
-            "rvalue:bar   baz = a=b:-:4:5:20",
-            "id:c:-:5:0:0",
-            "op:=:-:5:1:1",
-            "rvalue:d:-:5:2:2",
+	    "-:4:0:3\tid\tfoo",
+            "-:4:4:4\top\t=",
+            "-:4:5:20\trvalue\tbar   baz = a=b",
+            "-:5:0:0\tid\tc",
+            "-:5:1:1\top\t=",
+            "-:5:2:2\trvalue\td"
 	])
     })
 
@@ -35,12 +35,12 @@ foo = bar
 foo =
 `).tokenize().map( val => val.inspect())
 	assert.deepEqual(t, [
-            "comment:# a comment:-:2:0:10",
-            "id:foo:-:3:0:3",
-            "op:=:-:3:4:4",
-            "rvalue:bar:-:3:5:8",
-            "id:foo:-:4:0:3",
-            "op:=:-:4:4:4",
+	    "-:2:0:10\tcomment\t# a comment",
+            "-:3:0:3\tid\tfoo",
+            "-:3:4:4\top\t=",
+            "-:3:5:8\trvalue\tbar",
+            "-:4:0:3\tid\tfoo",
+            "-:4:4:4\top\t=",
 	])
     })
 
@@ -51,12 +51,12 @@ bar: foo
 	id
 `).tokenize().map( val => val.inspect())
 	assert.deepEqual(t, [
-            "id:$(f\too):-:2:0:6",
-            "op:::-:2:7:7",
-            "id:bar:-:3:0:2",
-            "op:::-:3:3:3",
-            "rvalue:foo:-:3:4:7",
-            "recipe:id:-:4:0:2",
+	    "-:2:0:6\tid\t$(f\too)",
+            "-:2:7:7\top\t:",
+            "-:3:0:2\tid\tbar",
+            "-:3:3:3\top\t:",
+            "-:3:4:7\trvalue\tfoo",
+            "-:4:0:2\trecipe\tid",
 	])
     })
 })
@@ -79,14 +79,20 @@ baz=1
 	parser.parse()
 	assert.deepEqual(parser.vars, {
 	    "baz": {
-		"line": 4,
-		"src": "test",
-		"val": "1",
+		value: "1",
+		name: "baz",
+		location: {
+		    "src": "test",
+		    "line": 4,
+		}
             },
             "foo": {
-		"line": 3,
-		"src": "test",
-		"val": "",
+		location: {
+		    "line": 3,
+		    "src": "test",
+		},
+		name: 'foo',
+		value: "",
             }
  	})
 	assert.deepEqual(parser.rules, [])
@@ -114,11 +120,17 @@ b: c
 	assert.deepEqual(parser.vars, {})
 	assert.deepEqual(parser.rules, [{
 	    target: 'a',
-	    line: 2,
-	    src: 'test'
+	    "deps": "",
+            "location": {
+		"line": 2,
+		"src": "test",
+            },
+            "recipes": []
 	}, {
-	    line: 3,
-	    src: 'test',
+	    location: {
+		line: 3,
+		src: 'test',
+	    },
 	    target: 'b',
 	    deps: 'c',
 	    recipes: [ "1", "2" ]
@@ -176,10 +188,13 @@ w = $(q)
 	parser.parse()
 	new make.Expander(parser, make.Functions).expand()
 	assert.deepEqual(parser.vars, {
-	     "q": {
-		 "line": 1,
-		 "src": "-",
-		 "val": "q  /a/",
+	    "q": {
+		name: 'q',
+		location: {
+		    "line": 1,
+		    "src": "-",
+		},
+		 "value": "q  /a/",
 	     }
 	})
     })
@@ -202,7 +217,7 @@ $(q):
 	parser.parse()
 	new make.Expander(parser, make.Functions).expand()
 	Object.keys(parser.vars).forEach( v => {
-	    parser.vars[v] = parser.vars[v].val
+	    parser.vars[v] = parser.vars[v].value
 	})
 	assert.deepEqual(parser.vars, {
             "bar": "-/bar/www",
@@ -211,8 +226,8 @@ $(q):
             "q": "name",
       	})
 	assert.deepEqual(parser.rules, [
-	    { target: 'qqqq', recipes: [ '@echo $(dirs)' ] },
-	    { target: 'name', recipes: [ '@echo $(name)' ] } ])
+	    { target: 'qqqq', recipes: [ '@echo $(dirs)' ], location: {line:5,src:'-'}, deps: '' },
+	    { target: 'name', recipes: [ '@echo $(name)' ], location: {line:11,src:'-'}, deps: ''  } ])
     })
 
     test('recursion 1', function() {
@@ -228,7 +243,7 @@ qWE=QWE
 	parser.parse()
 	new make.Expander(parser, make.Functions).expand()
 	Object.keys(parser.vars).forEach( v => {
-	    parser.vars[v] = parser.vars[v].val
+	    parser.vars[v] = parser.vars[v].value
 	})
 	assert.deepEqual(parser.vars, {
             "e": "E",
@@ -236,8 +251,9 @@ qWE=QWE
             "qWE": "QWE",
             "wE": "WE",
      	})
+	parser.rules.forEach( v => delete v.location)
 	assert.deepEqual(parser.rules, [
-	    { target: 'z', recipes: [ "@echo '-$(f)-'" ] }
+	    { target: 'z', recipes: [ "@echo '-$(f)-'" ], deps: '' }
 	])
     })
 
@@ -255,7 +271,7 @@ z=/foo/bar
 	parser.parse()
 	new make.Expander(parser, make.Functions).expand()
 	Object.keys(parser.vars).forEach( v => {
-	    parser.vars[v] = parser.vars[v].val
+	    parser.vars[v] = parser.vars[v].value
 	})
 	assert.deepEqual(parser.vars, {
             "b": "/foo/bar",
@@ -282,16 +298,17 @@ $(notdir /foo/bar): fo  o $(aa)
 	expander.log = () => {}
 	expander.expand()
 	Object.keys(parser.vars).forEach( v => {
-	    parser.vars[v] = parser.vars[v].val
+	    parser.vars[v] = parser.vars[v].value
 	})
 	assert.deepEqual(parser.vars, {
 	    "aa": "? ? ",
             "bb": "?",
             "zz": ""
      	})
+	parser.rules.forEach( v => delete v.location)
 	assert.deepEqual(parser.rules, [
-	    { target: 'fo      o' },
-	    { target: '?', deps: 'fo  o ? ? ' }
+	    { target: 'fo      o', deps: '', recipes: [] },
+	    { target: '?', deps: 'fo  o ? ? ', recipes: [] }
      	])
     })
 
