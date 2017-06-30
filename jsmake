@@ -99,6 +99,8 @@ class Parser {
     rule(idx) {
 	let r = {
 	    target: this.tokens[idx].val,
+	    line: this.tokens[idx].line,
+	    src: this.tokens[idx].src
 	}
 	idx += 2
 	if (this.tokens[idx] && this.tokens[idx].tag === 'rvalue') {
@@ -118,14 +120,19 @@ class Parser {
 	return ri
     }
 
+    // { varname: { val: 'foo', line: 123 } }
     variable(idx) {
 	let name = this.tokens[idx].val
-	idx += 2
-	if (this.tokens[idx] && this.tokens[idx].tag !== 'rvalue') {
-	    this.vars[name] = ''
-	    return idx
+	this.vars[name] = {
+	    val: '',
+	    line: this.tokens[idx].line,
+	    src: this.tokens[idx].src
 	}
-	this.vars[name] = this.tokens[idx] ? this.tokens[idx].val : ''
+	idx += 2
+	if (this.tokens[idx] && this.tokens[idx].tag !== 'rvalue')
+	    return idx
+
+	this.vars[name].val = this.tokens[idx] ? this.tokens[idx].val : ''
 	return idx+1
     }
 }
@@ -149,11 +156,15 @@ class Expander {
 
 	this.input = null
 	this.tok = null
-	this.vars = {}
-	this.rules = []
 
-	this.log = console.error
+	this.location = {
+	    line: -100000,
+	    src: 'unset'
+	}
     }
+
+    loc() { return `${this.location.src}:${this.location.line}` }
+    log(msg) { console.error(`${this.loc()}:`, 'warning:', msg) }
 
     advance() {
 	if (!this.input.length) return this.tok = null // end of input
@@ -173,8 +184,11 @@ class Expander {
 	throw new Error(`lexer failure: ${this.input}`)
     }
 
-    parse(str) {
-	this.input = str
+    parse(obj) {
+	if (typeof obj === 'string') throw new Error('Expander#parse()')
+	this.input = obj.val
+	if (obj.src) this.location.src = obj.src
+	if (obj.line) this.location.line = obj.line
 	let r = []
 
 	this.advance()
@@ -194,19 +208,28 @@ class Expander {
 	for (let varname in this.parser.vars) {
 	    let val = this.parser.vars[varname]
 
-	    let e_varname = this._expand(this.parse(varname))
+	    let e_varname = this._expand(this.parse({val: varname,
+						     line: val.line,
+						     src: val.src}))
 	    let e_val = this._expand(this.parse(val), e_varname)
 	    e_vars[e_varname] = e_val
 	}
-	this.parser.vars = e_vars
+	for (let varname in e_vars)
+	    this.parser.vars[varname].val = e_vars[varname]
 
 	let e_rules = []
 	for (let rule of this.parser.rules) {
-	    let r = { target: this._expand(this.parse(rule.target)) }
-	    if (rule.deps) r.deps = this._expand(this.parse(rule.deps))
+	    let r = {
+		target: this._expand(this.parse({
+		    val: rule.target,
+		    src: rule.src,
+		    line: rule.line,
+		}))
+	    }
+	    if (rule.deps) r.deps = this._expand(this.parse({ val: rule.deps }))
 	    if (rule.recipes) {
-		// rules are being expanded during the invocation, not here
-		r.recipes = rule.recipes
+	    	// rules are being expanded during the invocation, not here
+	    	r.recipes = rule.recipes
 	    }
 	    e_rules.push(r)
 	}
@@ -225,7 +248,7 @@ class Expander {
 	    // the value of the variable we've found can be expanded too
 	    if (defined) {
 		if (wantedby && wantedby === r)
-		    throw new Error(`var '${r}' references itself`)
+		    throw new Error(`${this.loc()}: var '${r}' references itself`)
 		return this._expand(this.parse(defined), wantedby)
 	    }
 
@@ -239,6 +262,7 @@ class Expander {
 		return this.functions[fname].apply(this, fargs)
 	    }
 
+	    this.log(`undefined variable '${r}'`)
 	    return '?'		// FIXME
 	}).join('')
     }
@@ -257,7 +281,8 @@ class Expander {
 	}
 
 	while (this.tok !== ')') {
-	    if (this.tok === null) throw new Error(`expected ')'`)
+	    if (this.tok === null)
+		throw new Error(`${this.loc()}: expected ')'`)
 
 	    if (this.tok === '$') r.push(this.func())
 	    else {
@@ -272,7 +297,7 @@ class Expander {
 
     eat(expected_token) {
 	if (this.tok !== expected_token)
-	    throw new Error(`saw ${this.tok}, expected ${expected_token}`)
+	    throw new Error(`${this.loc()}: saw '${this.tok}', expected '${expected_token}'`)
 	this.advance()
     }
 }
