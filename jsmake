@@ -3,6 +3,8 @@
 let util = require('util')
 let path = require('path')
 
+let inspect = v => util.inspect(v, {depth:null})
+
 class FirstTokenizer {
     constructor(input) {
 	this.input = input.split("\n")
@@ -130,6 +132,8 @@ class Expander {
 	this.tok = null
 	this.vars = {}
 	this.rules = []
+
+	this.log = console.error
     }
 
     advance() {
@@ -231,30 +235,33 @@ class Expander {
     }
 
     func() {
-	let r = []
 	let prefix = this.tok_prefix ? this.tok_prefix : null
+	let result = (val) => {
+	    return { type: '$', val, prefix }
+	}
+	let r = []
+
 	this.eat('$')
 	this.eat('(')
 
-	if (this.tok === '$') r.push(this.func())
-
 	if (this.tok === ')') {
 	    this.advance()
-	    return r
+	    this.log('an attempt to expand empty space')
+	    return result([])
 	}
 
-	r.push(this.tok)
-	this.advance()
+	while (this.tok !== ')') {
+	    if (this.tok === null) throw new Error(`expected ')'`)
 
-	if (this.tok === '$') r.push(this.func())
+	    if (this.tok === '$') r.push(this.func())
+	    else {
+		r.push(this.tok)
+		this.advance()
+	    }
+	}
 
 	this.eat(')')
-	let result = {
-	    type: '$',
-	    val: r
-	}
-	if (prefix) result.prefix = prefix
-	return result
+	return result(r)
     }
 
     eat(expected_token) {

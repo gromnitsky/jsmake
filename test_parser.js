@@ -240,7 +240,7 @@ $(q):
 	    { target: 'name', recipes: [ '@echo $(name)' ] } ])
     })
 
-    test('recursions', function() {
+    test('deep recursions', function() {
 	let tokens = new make.FirstTokenizer(`
 f=1$(q$(w$(e))) $(e)
 z:
@@ -262,6 +262,30 @@ qWE=QWE
 	    { target: 'z', recipes: [ "@echo '-$(f)-'" ] }
 	])
     })
+
+    test('func', function() {
+	let tokens = new make.FirstTokenizer(`
+b=$(z)
+c=$(dir $(b))
+d=$(dir /home$(b))
+e=$(dir /home$(dir $(b))/john)
+f=$(dir /home$(b)/john$(b)/bob/$(b)$(b)$(b)/1111/$(b))
+
+z=/foo/bar
+`).tokenize()
+	let parser = new make.Parser(tokens)
+	parser.parse()
+	new make.Expander(parser, make.Functions).expand()
+	assert.deepEqual(parser.vars, {
+            "b": "/foo/bar",
+            "c": "/foo/",
+            "d": "/home/foo/",
+            "e": "/home/foo//",
+            "f": "/home/foo/bar/john/foo/bar/bob//foo/bar/foo/bar/foo/bar/1111//foo/",
+            "z": "/foo/bar",
+     	})
+    })
+
 })
 
 suite('Functions', function() {
