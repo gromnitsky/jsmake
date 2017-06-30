@@ -212,10 +212,13 @@ class Expander {
 						     line: val.line,
 						     src: val.src}))
 	    let e_val = this._expand(this.parse(val), e_varname)
-	    e_vars[e_varname] = e_val
+	    e_vars[e_varname] = {
+		val: e_val,
+		src: val.src,
+		line: val.line
+	    }
 	}
-	for (let varname in e_vars)
-	    this.parser.vars[varname].val = e_vars[varname]
+	this.parser.vars = e_vars
 
 	let e_rules = []
 	for (let rule of this.parser.rules) {

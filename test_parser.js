@@ -74,10 +74,21 @@ suite('Parser', function() {
 foo = bar
 foo =
 baz=1
-`).tokenize()
+`, 'test').tokenize()
 	let parser = new make.Parser(tokens)
 	parser.parse()
-	assert.deepEqual(parser.vars, {'foo': '', baz: 1})
+	assert.deepEqual(parser.vars, {
+	    "baz": {
+		"line": 4,
+		"src": "test",
+		"val": "1",
+            },
+            "foo": {
+		"line": 3,
+		"src": "test",
+		"val": "",
+            }
+ 	})
 	assert.deepEqual(parser.rules, [])
     })
 
@@ -97,13 +108,17 @@ a:
 b: c
 	1
 	2
-`).tokenize()
+`, "test").tokenize()
 	let parser = new make.Parser(tokens)
 	parser.parse()
 	assert.deepEqual(parser.vars, {})
 	assert.deepEqual(parser.rules, [{
-	    target: 'a'
+	    target: 'a',
+	    line: 2,
+	    src: 'test'
 	}, {
+	    line: 3,
+	    src: 'test',
 	    target: 'b',
 	    deps: 'c',
 	    recipes: [ "1", "2" ]
@@ -160,7 +175,13 @@ w = $(q)
 	let parser = new make.Parser(tokens)
 	parser.parse()
 	new make.Expander(parser, make.Functions).expand()
-	assert.deepEqual(parser.vars, { q: 'q  /a/' })
+	assert.deepEqual(parser.vars, {
+	     "q": {
+		 "line": 1,
+		 "src": "-",
+		 "val": "q  /a/",
+	     }
+	})
     })
 
     test('refs', function() {
@@ -180,6 +201,9 @@ $(q):
 	let parser = new make.Parser(tokens)
 	parser.parse()
 	new make.Expander(parser, make.Functions).expand()
+	Object.keys(parser.vars).forEach( v => {
+	    parser.vars[v] = parser.vars[v].val
+	})
 	assert.deepEqual(parser.vars, {
             "bar": "-/bar/www",
             "dirs": "/foo/ /home/ -/bar/www   /etc/",
@@ -191,7 +215,7 @@ $(q):
 	    { target: 'name', recipes: [ '@echo $(name)' ] } ])
     })
 
-    test('deep recursions', function() {
+    test('recursion 1', function() {
 	let tokens = new make.FirstTokenizer(`
 f=1$(q$(w$(e))) $(e)
 z:
@@ -203,6 +227,9 @@ qWE=QWE
 	let parser = new make.Parser(tokens)
 	parser.parse()
 	new make.Expander(parser, make.Functions).expand()
+	Object.keys(parser.vars).forEach( v => {
+	    parser.vars[v] = parser.vars[v].val
+	})
 	assert.deepEqual(parser.vars, {
             "e": "E",
             "f": "1QWE E",
@@ -214,7 +241,7 @@ qWE=QWE
 	])
     })
 
-    test('func', function() {
+    test('recursion 2', function() {
 	let tokens = new make.FirstTokenizer(`
 b=$(z)
 c=$(dir $(b))
@@ -227,6 +254,9 @@ z=/foo/bar
 	let parser = new make.Parser(tokens)
 	parser.parse()
 	new make.Expander(parser, make.Functions).expand()
+	Object.keys(parser.vars).forEach( v => {
+	    parser.vars[v] = parser.vars[v].val
+	})
 	assert.deepEqual(parser.vars, {
             "b": "/foo/bar",
             "c": "/foo/",
@@ -235,6 +265,34 @@ z=/foo/bar
             "f": "/home/foo/bar/john/foo/bar/bob//foo/bar/foo/bar/foo/bar/1111//foo/",
             "z": "/foo/bar",
      	})
+    })
+
+    test('recursion 3', function() {
+	let tokens = new make.FirstTokenizer(`
+fo      o:
+aa = $(bb) $(cc) $(zz)
+bb = $(cc)
+zz =
+
+$(notdir /foo/bar): fo  o $(aa)
+`).tokenize()
+	let parser = new make.Parser(tokens)
+	parser.parse()
+	let expander = new make.Expander(parser, make.Functions)
+	expander.log = () => {}
+	expander.expand()
+	Object.keys(parser.vars).forEach( v => {
+	    parser.vars[v] = parser.vars[v].val
+	})
+	assert.deepEqual(parser.vars, {
+	    "aa": "? ? ",
+            "bb": "?",
+            "zz": ""
+     	})
+	assert.deepEqual(parser.rules, [
+	    { target: 'fo      o' },
+	    { target: '?', deps: 'fo  o ? ? ' }
+     	])
     })
 
 })
