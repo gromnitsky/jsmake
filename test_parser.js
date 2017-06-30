@@ -12,102 +12,53 @@ suite('FirstTokenizer', function() {
     })
 
     test('newlines w/ backslashes', function() {
-	assert.deepEqual(new make.FirstTokenizer(`
+	let t = new make.FirstTokenizer(`
 foo = bar \\
   baz = \\
 a=b
 c=d
-`).tokenize(), [{
-    "pos": "4:0:3",
-    "type": "identifier",
-    "val": "foo",
-}, {
-    "pos": "4:4:4",
-    "type": "op",
-    "val": "=",
-}, {
-    "pos": "4:5:20",
-    "type": "rvalue",
-    "val": "bar   baz = a=b",
-}, {
-    "pos": "5:0:0",
-    "type": "identifier",
-    "val": "c",
-}, {
-    "pos": "5:1:1",
-    "type": "op",
-    "val": "=",
-}, {
-    "pos": "5:2:2",
-    "type": "rvalue",
-    "val": "d",
-}])
+`).tokenize().map( val => val.inspect())
+	assert.deepEqual(t, [
+            "id:foo:-:4:0:3",
+            "op:=:-:4:4:4",
+            "rvalue:bar   baz = a=b:-:4:5:20",
+            "id:c:-:5:0:0",
+            "op:=:-:5:1:1",
+            "rvalue:d:-:5:2:2",
+	])
     })
 
     test('vars', function() {
-	assert.deepEqual(new make.FirstTokenizer(`
+	let t = new make.FirstTokenizer(`
 # a comment
 foo = bar
 foo =
-`).tokenize(), [{
-    "pos": "2:0:10",
-    "type": "comment",
-    "val": "# a comment"
-}, {
-    "pos": "3:0:3",
-    "type": "identifier",
-    "val": "foo"
-}, {
-    "pos": "3:4:4",
-    "type": "op",
-    "val": "="
-}, {
-    "pos": "3:5:8",
-    "type": "rvalue",
-    "val": "bar"
-}, {
-    "pos": "4:0:3",
-    "type": "identifier",
-    "val": "foo",
-}, {
-    "pos": "4:4:4",
-    "type": "op",
-    "val": "="
-}])
+`).tokenize().map( val => val.inspect())
+	assert.deepEqual(t, [
+            "comment:# a comment:-:2:0:10",
+            "id:foo:-:3:0:3",
+            "op:=:-:3:4:4",
+            "rvalue:bar:-:3:5:8",
+            "id:foo:-:4:0:3",
+            "op:=:-:4:4:4",
+	])
     })
 
     test('rules', function() {
-	assert.deepEqual(new make.FirstTokenizer(`
+	let t = new make.FirstTokenizer(`
 $(f	oo):
 bar: foo
 	id
-`).tokenize(), [{
-    "pos": "2:0:6",
-    "type": "identifier",
-    "val": "$(f	oo)"
-}, {
-    "pos": "2:7:7",
-    "type": "op",
-    "val": ":",
-}, {
-    "pos": "3:0:2",
-    "type": "identifier",
-    "val": "bar",
-}, {
-    "pos": "3:3:3",
-    "type": "op",
-    "val": ":",
-}, {
-    "pos": "3:4:7",
-    "type": "rvalue",
-    "val": "foo",
-}, {
-    "pos": "4:0:2",
-    "type": "recipe",
-    "val": "id",
-}])
+`).tokenize().map( val => val.inspect())
+	assert.deepEqual(t, [
+            "id:$(f\too):-:2:0:6",
+            "op:::-:2:7:7",
+            "id:bar:-:3:0:2",
+            "op:::-:3:3:3",
+            "rvalue:foo:-:3:4:7",
+            "recipe:id:-:4:0:2",
+	])
     })
-
 })
 
 suite('Parser', function() {

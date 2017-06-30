@@ -5,18 +5,35 @@ let path = require('path')
 
 let inspect = v => util.inspect(v, {depth:null})
 
+class FToken {
+    constructor(tag, val, src, line, col, row) {
+	this.tag = tag
+	this.val = val
+	this.src = src
+	this.line = line
+	this.col = col
+	this.row = row
+    }
+
+    pos() { return `${this.src}:${this.line}:${this.col}:${this.row}` }
+    inspect() { return `${this.tag}:${this.val}:${this.pos()}`}
+}
+
 class FirstTokenizer {
-    constructor(input) {
+    // input -- a string to tokenize
+    // src   -- a file name from which the input came from
+    constructor(input, src = '-') {
 	this.input = input.split("\n")
 
 	this.tokens = [
 	    { type: 'comment', re: '#.*$' },
 	    { type: 'recipe',  re: '\t.*$' },
-	    { type: 'identifier', re: '[^=:]+' },
+	    { type: 'id', re: '[^=:]+' },
 	    { type: 'op',  re: '[=:]'},
 	    { type: 'rvalue',  re: '.*$' },
 	]
 	this.line = 0
+	this.src = src
     }
 
     tokenize() {
@@ -26,6 +43,7 @@ class FirstTokenizer {
 	    this.line++
 	    let column = 0
 	    if (line.match(/^\s*$/)) continue
+
 	    if (line.match(/\\$/)) { // join lines that end with `\`
 		line_prev += line.replace(/\\$/, '')
 		continue
@@ -42,8 +60,9 @@ class FirstTokenizer {
 		    if (!m) continue
 		    let skip = m.index + m[0].length
 		    line = line.slice(skip)
-		    r.push({type: token.type, val: m[0].trim(),
-			    pos: `${this.line}:${column}:${column + skip - 1}`})
+
+		    r.push(new FToken(token.type, m[0].trim(), this.src,
+				      this.line, column, column + skip - 1))
 		    column += skip
 		}
 	    }
@@ -67,12 +86,12 @@ class Parser {
 	    let cur = this.tokens[idx]
 	    let next = this.tokens[idx+1]
 
-	    if (cur.type === 'identifier' && next && next.type === 'op') {
+	    if (cur.tag === 'id' && next && next.tag === 'op') {
 		skip = next.val === '=' ? this.variable(idx) : this.rule(idx)
-	    } else if (cur.type === 'comment') {
+	    } else if (cur.tag === 'comment') {
 		// TODO: annotate the last rule
 	    } else {
-		throw new Error(`${cur.pos}: unexpected ${cur.type}: ${cur.val}`)
+		throw new Error(`${cur.pos()}: unexpected ${cur.tag}: ${cur.val}`)
 	    }
 	}
     }
@@ -82,14 +101,14 @@ class Parser {
 	    target: this.tokens[idx].val,
 	}
 	idx += 2
-	if (this.tokens[idx] && this.tokens[idx].type === 'rvalue') {
+	if (this.tokens[idx] && this.tokens[idx].tag === 'rvalue') {
 	    r.deps = this.tokens[idx].val
 	    idx++
 	}
 
 	let ri = idx
 	let recipes = []
-	while (this.tokens[ri] && this.tokens[ri].type === 'recipe') {
+	while (this.tokens[ri] && this.tokens[ri].tag === 'recipe') {
 	    recipes.push(this.tokens[ri].val)
 	    ri++
 	}
@@ -102,7 +121,7 @@ class Parser {
     variable(idx) {
 	let name = this.tokens[idx].val
 	idx += 2
-	if (this.tokens[idx] && this.tokens[idx].type !== 'rvalue') {
+	if (this.tokens[idx] && this.tokens[idx].tag !== 'rvalue') {
 	    this.vars[name] = ''
 	    return idx
 	}
