@@ -241,10 +241,15 @@ class Expander {
 	for (let key in this.parser.vars) {
 	    let variable = this.parser.vars[key]
 
-	    let e_key = this._expand(this.parse(new Var(variable.location,
-							'dummy1', key)))
-	    let e_val = this._expand(this.parse(variable), e_key)
-	    e_vars[e_key] = new Var(variable.location, e_key, e_val)
+	    let e_key = this._expand(this.parse(new Var(variable.location, 'dummy1', key)))
+	    // the value of the macro (the right-side, after the '=')
+	    // is expanded when (a) the macro is requested during
+	    // recipe execution, or (b) if it's mentioned in the
+	    // left-size part (before the '='), or (c) when target lines
+	    // are being expanded.
+	    //
+	    // i.e., we're NOT doing it here!
+	    e_vars[e_key] = new Var(variable.location, e_key, variable.value)
 	}
 	this.parser.vars = e_vars
     }
@@ -265,19 +270,20 @@ class Expander {
     }
 
     // crazy recursive
-    _expand(arr, wantedby) {
+    _expand(arr, worklog = []) {
 	return arr.map( item => {
 	    // a non-expandable portion
 	    if (item.type !== '$') return (item.val || item)
 
 	    // turtles all the way down
-	    let r = this._expand(item.val, wantedby)
+	    let r = this._expand(item.val, worklog)
 	    let defined = this.parser.vars[r]
 	    // the value of the variable we've found can be expanded too
 	    if (defined) {
-		if (wantedby && wantedby === r)
+		if (r === worklog[0])
 		    throw new Error(`${this.location}: var '${r}' references itself`)
-		return this._expand(this.parse(defined), wantedby)
+		worklog.push(r)
+		return this._expand(this.parse(defined), worklog)
 	    }
 
 	    // check r in the list of known functions; TODO: refactor out
@@ -289,6 +295,9 @@ class Expander {
 		    trimLeft().split(',')
 		return this.functions[fname].apply(this, fargs)
 	    }
+
+	    // check r in the environment
+	    if (r in process.env) return process.env[r]
 
 	    this.log(`undefined variable '${r}'`)
 	    return '?'		// FIXME
