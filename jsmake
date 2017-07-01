@@ -2,6 +2,7 @@
 
 let util = require('util')
 let path = require('path')
+let fs = require('fs')
 
 let inspect = v => util.inspect(v, {depth:null})
 
@@ -347,25 +348,68 @@ exports.Expander = Expander
 
 exports.Functions = Functions
 
+// CLI
+
+let tokenize_file = function(file) {
+    let str = fs.readFileSync(file === '-' ? '/dev/stdin' : file).toString()
+    return new FirstTokenizer(str, file).tokenize()
+}
+
+let err = function(exit_code, ...args) {
+    console.error(path.basename(process.argv[1]), 'error:', ...args)
+    process.exit(exit_code)
+}
+
 // Main
 if (process.argv[1] === __filename) {
-    let concat = require('concat-stream')
+    let conf = {
+	version: '0.0.1',	// meta
+	verbose: 0,		// TODO
+	touch: false,		// TODO
+	dry_run: false,		// TODO
+    }
 
-    let concat_stream = concat( input => {
-	let tokens = new FirstTokenizer(input.toString()).tokenize()
-	console.log(tokens)
+    let makefiles = []
+    let targets = []		// TODO
+    let user_vars = []
 
-	let parser = new Parser(tokens)
-	parser.parse()
-	console.log(parser.vars)
-	console.log(parser.rules)
+    let skip = 0
+    let args = process.argv.slice(2)
+    for (let idx=0; idx < args.length; ++idx) {
+	if (skip > idx) continue
+	let opt = args[idx]
 
-	console.log('')
-	let expander = new Expander(parser, Functions)
-	expander.expand()
-	console.log(parser.vars)
-	console.log(parser.rules)
-    })
+	if (opt === '-f') {
+	    if (!args[idx+1]) err(2, '-f requires an argument')
+	    makefiles.push(args[idx+1])
+	    skip = idx+1	// eat the next arg
+	}
+	else if (opt === '-d') conf.verbose++
+	else if (opt === '-t') conf.touch = true
+	else if (opt === '-n') conf.dry_run = true
+	else if (opt === '-v') {
+	    console.log(conf.version)
+	    process.exit(0)
+	}
+	else if (opt.indexOf('=') !== -1) { // FOO=bar
+	    user_vars = user_vars.concat(new FirstTokenizer(opt, 'cmd').tokenize())
+	} else targets.push(opt)
+    }
 
-    process.stdin.pipe(concat_stream)
+    if (!makefiles.length) err(2, 'no makefile found')
+
+    let tokens = [].concat(...makefiles.map( file => tokenize_file(file)))
+	.concat(user_vars)
+    console.log(tokens)
+
+    let parser = new Parser(tokens)
+    parser.parse()
+    console.log(parser.vars)
+    console.log(parser.rules)
+
+    console.log('')
+    let expander = new Expander(parser, Functions)
+    expander.expand()
+    console.log(parser.vars)
+    console.log(parser.rules)
 }
