@@ -161,7 +161,7 @@ foo=
 })
 
 suite('Expander', function() {
-    test('circle 1', function() {
+    test('cycle 1', function() {
 	let tokens = new make.FirstTokenizer(`
 q = $(w)
 w = $(q)
@@ -174,7 +174,7 @@ $(q):
 	}, /var 'q' references itself/)
     })
 
-    test('circle 2', function() {
+    test('cycle 2', function() {
 	let tokens = new make.FirstTokenizer(`
 q = $(q)
 $(q):
@@ -184,6 +184,51 @@ $(q):
 	assert.throws( () => {
 	    new make.Expander(parser).expand()
 	}, /var 'q' references itself/)
+    })
+
+    test('cycle 3', function() {
+	let tokens = new make.FirstTokenizer(`
+a = $(b)
+b = $(c)
+c = cda
+
+loop = $(bad)
+bad = $(loop)
+
+test: $(a) $(loop)
+`).tokenize()
+	let parser = new make.Parser(tokens)
+	parser.parse()
+	assert.throws( () => {
+	    new make.Expander(parser).expand()
+	}, /var 'loop' references itself/)
+    })
+
+    test('cycle 4', function() {
+	let tokens = new make.FirstTokenizer(`
+a = $(b)
+b = $(c)
+c = cda
+test: $(a) $(a) $(dir $(a))
+`).tokenize()
+	let parser = new make.Parser(tokens)
+	parser.parse()
+	assert.doesNotThrow( () => {
+	    new make.Expander(parser, make.Functions).expand()
+
+	}, /var 'a' references itself/)
+    })
+
+    test('cycle 5', function() {
+	let tokens = new make.FirstTokenizer(`
+test: $(dir $(dir /a/b/c/d))
+`).tokenize()
+	let parser = new make.Parser(tokens)
+	parser.parse()
+	assert.doesNotThrow( () => {
+	    new make.Expander(parser, make.Functions).expand()
+
+	}, /references itself/)
     })
 
     test('dir', function() {
