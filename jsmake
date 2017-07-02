@@ -230,6 +230,9 @@ class Expander {
 	throw new Error(`lexer failure: ${this.input}`)
     }
 
+    // push STR back on input
+    pushback(str) { this.input = str + this.input }
+
     parse(variable) {
 	if (!(variable instanceof Var)) throw new Error('Expander#parse()')
 
@@ -246,6 +249,48 @@ class Expander {
 	    }
 	}
 	return r
+    }
+
+    eat(expected_token) {
+	if (this.tok !== expected_token)
+	    throw new Error(`${this.location}: saw '${this.tok}', expected '${expected_token}'`)
+	this.advance()
+    }
+
+    func() {
+	let result = (val) => ({ type: '$', val})
+	let r = []
+
+	this.eat('$')
+
+	let single_char = this.tok[0] // $@, $<, etc
+	if (/[^$()]/.test(single_char) && (!this.tok[1] || /\s/.test(this.tok[1]))) {
+	    this.pushback(this.tok.slice(1))
+	    this.advance()
+	    return result([single_char])
+	}
+
+	this.eat('(')
+
+	if (this.tok === ')') {
+	    this.advance()
+	    this.log('an attempt to expand empty space')
+	    return result([])
+	}
+
+	while (this.tok !== ')') {
+	    if (this.tok === null)
+		throw new Error(`${this.location}: expected ')'`)
+
+	    if (this.tok === '$') r.push(this.func())
+	    else {
+		r.push(this.tok)
+		this.advance()
+	    }
+	}
+
+	this.eat(')')
+	return result(r)
     }
 
     // rewrites this.parser.{vars,rules} with expanded values
@@ -319,40 +364,6 @@ class Expander {
 	    this.log(`undefined variable '${r}'`)
 	    return '?'		// FIXME
 	}).join('')
-    }
-
-    func() {
-	let result = (val) => ({ type: '$', val})
-	let r = []
-
-	this.eat('$')
-	this.eat('(')
-
-	if (this.tok === ')') {
-	    this.advance()
-	    this.log('an attempt to expand empty space')
-	    return result([])
-	}
-
-	while (this.tok !== ')') {
-	    if (this.tok === null)
-		throw new Error(`${this.location}: expected ')'`)
-
-	    if (this.tok === '$') r.push(this.func())
-	    else {
-		r.push(this.tok)
-		this.advance()
-	    }
-	}
-
-	this.eat(')')
-	return result(r)
-    }
-
-    eat(expected_token) {
-	if (this.tok !== expected_token)
-	    throw new Error(`${this.location}: saw '${this.tok}', expected '${expected_token}'`)
-	this.advance()
     }
 }
 

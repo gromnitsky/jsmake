@@ -359,6 +359,21 @@ $(notdir /foo/bar): fo  o $(aa)
      	])
     })
 
+    test('single char var', function() {
+	let tokens = new make.FirstTokenizer(`
+a = /foo
+q: $(a) $a$a 1 $a 2 $(a) 3 $a
+`).tokenize()
+	let parser = new make.Parser(tokens)
+	parser.parse()
+	let expander = new make.Expander(parser, make.Functions)
+	expander.log = () => {}
+	expander.expand()
+	parser.rules.forEach( v => delete v.location)
+	assert.deepEqual(parser.rules[0].deps,
+			 "/foo /foo/foo 1 /foo 2 /foo 3 /foo")
+    })
+
 })
 
 suite('Functions', function() {
