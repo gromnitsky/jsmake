@@ -197,7 +197,7 @@ class Worklog {
         }
         return false
     }
-    inspect() { return `#<EVar ${this.name} ${inspect(this.parent)}>` }
+    inspect() { return `#<Worklog ${this.name} ${inspect(this.parent)}>` }
 }
 
 class Expander {
