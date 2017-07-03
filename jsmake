@@ -183,21 +183,27 @@ let Functions = {
     }
 }
 
-// a tree-like structure for cycles detection in Expander#_expand()
-class Worklog {
-    constructor(name, parent) {
-	this.name = name
-	this.parent = parent
+// a syntax tree node
+class STNode {
+    constructor(type, val) {
+	this.type = type,
+	this.val = val
+
+	this.parent = null
+	this.kids = []
     }
-    ascendant_of(name) {
+    add_kid(node) {
+	this.kids.push(node)
+	node.parent = this
+    }
+    descended_of(lvalue) {
         let parent = this.parent
         while (parent) {
-            if (parent.name === name) return true
+            if (parent.lvalue === lvalue) return true
             parent = parent.parent
         }
         return false
     }
-    inspect() { return `#<Worklog ${this.name} ${inspect(this.parent)}>` }
 }
 
 class Expander {
@@ -238,17 +244,17 @@ class Expander {
 
 	this.input = variable.value
 	if (variable.location) this.location = variable.location
-	let r = []
+	let node = new STNode('$')
 
 	this.advance()
 	while (this.tok !== null) {
-	    if (this.tok === '$') r.push(this.func())
+	    if (this.tok === '$') node.add_kid(this.func())
 	    else {
-		r.push({ val: this.tok })
+		node.add_kid(new STNode('term', this.tok))
 		this.advance()
 	    }
 	}
-	return r
+	return node
     }
 
     eat(expected_token) {
@@ -258,16 +264,15 @@ class Expander {
     }
 
     func() {
-	let result = (val) => ({ type: '$', val})
-	let r = []
-
 	this.eat('$')
 
 	let single_char = this.tok[0] // $@, $<, etc
 	if (/[^$()]/.test(single_char) && (!this.tok[1] || /\s/.test(this.tok[1]))) {
 	    this.pushback(this.tok.slice(1))
 	    this.advance()
-	    return result([single_char])
+	    let node = new STNode('$')
+	    node.add_kid(new STNode('term', single_char))
+	    return node
 	}
 
 	this.eat('(')
@@ -275,22 +280,23 @@ class Expander {
 	if (this.tok === ')') {
 	    this.advance()
 	    this.log('an attempt to expand empty space')
-	    return result([])
+	    return new STNode('term', '')
 	}
 
+	let node = new STNode('$')
 	while (this.tok !== ')') {
 	    if (this.tok === null)
 		throw new Error(`${this.location}: expected ')'`)
 
-	    if (this.tok === '$') r.push(this.func())
+	    if (this.tok === '$') node.add_kid(this.func())
 	    else {
-		r.push(this.tok)
+		node.add_kid(new STNode('term', this.tok))
 		this.advance()
 	    }
 	}
 
 	this.eat(')')
-	return result(r)
+	return node
     }
 
     // rewrites this.parser.{vars,rules} with expanded values
@@ -332,38 +338,56 @@ class Expander {
 	this.parser.rules = e_rules
     }
 
-    // crazy recursive
-    _expand(arr, worklog) {
-	return arr.map( item => {
-	    // a non-expandable portion
-	    if (item.type !== '$') return (item.val || item)
+    // STR is a function name with args; check if the func name in the
+    // list of known functions & if it is, run it
+    func_run(str) {
+	let fname = str.split(' ')[0]
+	if (fname in this.functions) {
+	    // remove the leading spaces only for the 1st arg
+	    // before passing them all to the function
+	    let fargs = str.split(' ').slice(1).join(' ').
+	    	trimLeft().split(',')
+	    return this.functions[fname].apply(this, fargs)
+	}
+	// return undefined if no valid func name was in STR
+    }
 
-	    // turtles all the way down
-	    let r = this._expand(item.val, worklog)
-	    let defined = this.parser.vars[r]
-	    // the value of the variable we've found can be expanded too
-	    if (defined) {
-		if (worklog && worklog.ascendant_of(r))
-		    throw new Error(`${this.location}: var '${r}' references itself`)
-		return this._expand(this.parse(defined), new Worklog(r, worklog))
+    _expand(node) {
+	if (node.type === '$') {
+	    let r = []
+	    for (let kid of node.kids) {
+		if (kid.type === 'term') {
+		    r.push(kid.val)
+		    continue
+		}
+
+		// turtles all the way down
+		let estr = this._expand(kid)
+		let variable = this.parser.vars[estr]
+		if (variable) {
+		    // the value of the variable we've found can be
+		    // expanded too!
+		    let ev = this._expand(this.parse(variable))
+		    r.push(ev)
+		    continue
+		}
+
+		let funcall = this.func_run(estr)
+		if (funcall !== undefined) {
+		    r.push(funcall)
+		    continue
+		}
+
+		// check the environment
+		if (estr in process.env) return process.env[estr]
+
+		this.log(`undefined variable '${estr}'`)
+		r.push('?')	// FIXME
 	    }
+	    return r.join('')
+	}
 
-	    // check r in the list of known functions; TODO: refactor out
-	    let fname = r.split(' ')[0]
-	    if (fname in this.functions) {
-		// remove the leading spaces only for the 1st arg
-		// before passing them all to the function
-		let fargs = r.split(' ').slice(1).join(' ').
-		    trimLeft().split(',')
-		return this.functions[fname].apply(this, fargs)
-	    }
-
-	    // check r in the environment
-	    if (r in process.env) return process.env[r]
-
-	    this.log(`undefined variable '${r}'`)
-	    return '?'		// FIXME
-	}).join('')
+	return node.val
     }
 }
 
