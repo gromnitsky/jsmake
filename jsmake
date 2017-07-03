@@ -196,14 +196,6 @@ class STNode {
 	this.kids.push(node)
 	node.parent = this
     }
-    descended_of(lvalue) {
-        let parent = this.parent
-        while (parent) {
-            if (parent.lvalue === lvalue) return true
-            parent = parent.parent
-        }
-        return false
-    }
 }
 
 class Expander {
@@ -352,14 +344,10 @@ class Expander {
 	// return undefined if no valid func name was in STR
     }
 
-    _expand(node) {
+    _expand(node, _start) {
 	if (node.type === '$') {
-	    let r = []
-	    for (let kid of node.kids) {
-		if (kid.type === 'term') {
-		    r.push(kid.val)
-		    continue
-		}
+	    return node.kids.map( kid => {
+		if (kid.type === 'term') return kid.val
 
 		// turtles all the way down
 		let estr = this._expand(kid)
@@ -367,27 +355,23 @@ class Expander {
 		if (variable) {
 		    // the value of the variable we've found can be
 		    // expanded too!
-		    let ev = this._expand(this.parse(variable))
-		    r.push(ev)
-		    continue
+		    if (_start === estr) throw new Error(`${this.location}: var '${estr}' references itself`)
+		    return this._expand(this.parse(variable), _start ? _start : estr)
 		}
 
 		let funcall = this.func_run(estr)
-		if (funcall !== undefined) {
-		    r.push(funcall)
-		    continue
-		}
+		if (funcall !== undefined) return funcall
 
 		// check the environment
 		if (estr in process.env) return process.env[estr]
 
 		this.log(`undefined variable '${estr}'`)
-		r.push('?')	// FIXME
-	    }
-	    return r.join('')
-	}
+		return '?'	// FIXME
 
-	return node.val
+	    }).join('')
+	} else {
+	    return node.val
+	}
     }
 }
 
