@@ -312,8 +312,7 @@ class Expander {
     }
 
     expand_rules() {
-	let e_rules = []
-	for (let rule of this.parser.rules) {
+	let e_rules = this.parser.rules.map( rule => {
 	    let e_target = this._expand(this.parse(new Var(rule.location, 'dummy2', rule.target)))
 	    let entry = new Rule(rule.location, e_target)
 	    if (rule.deps) entry.deps = this._expand(this.parse(new Var(null, 'dummy3', rule.deps)))
@@ -321,8 +320,8 @@ class Expander {
 	    	// rules are being expanded during the invocation, not here
 	    	entry.recipes = rule.recipes
 	    }
-	    e_rules.push(entry)
-	}
+	    return entry
+	})
 	this.parser.rules = e_rules
     }
 
