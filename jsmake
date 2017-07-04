@@ -188,13 +188,11 @@ class STNode {
     constructor(type, val) {
 	this.type = type,
 	this.val = val
-
-	this.parent = null
 	this.kids = []
     }
     add_kid(node) {
 	this.kids.push(node)
-	node.parent = this
+	return this
     }
 }
 
@@ -262,9 +260,7 @@ class Expander {
 	if (/[^$()]/.test(single_char) && (!this.tok[1] || /\s/.test(this.tok[1]))) {
 	    this.pushback(this.tok.slice(1))
 	    this.advance()
-	    let node = new STNode('$')
-	    node.add_kid(new STNode('term', single_char))
-	    return node
+	    return new STNode('$').add_kid(new STNode('term', single_char))
 	}
 
 	this.eat('(')
@@ -356,7 +352,7 @@ class Expander {
 		    // the value of the variable we've found can be
 		    // expanded too!
 		    if (_start === estr) throw new Error(`${this.location}: var '${estr}' references itself`)
-		    return this._expand(this.parse(variable), _start ? _start : estr)
+		    return this._expand(this.parse(variable), _start || estr)
 		}
 
 		let funcall = this.func_run(estr)
