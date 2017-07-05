@@ -89,7 +89,7 @@ class Rule {
 	    delete this.location.row
 	}
 	this.target = target
-	this.deps = deps
+	this.deps = deps || ''
 	this.recipes = recipes
     }
     inspect() {
@@ -378,6 +378,49 @@ exports.Expander = Expander
 
 exports.Functions = Functions
 
+let str2list = function(str) {
+    return [...new Set(str.split(/\s+/))]
+}
+
+class Maker {
+    constructor(expanded_rules, goals) {
+	this.rules_raw = expanded_rules
+	this.rules = {
+	    normal: [],
+	    implicit: []
+	}
+	this.goals = goals
+    }
+
+    log(rule, msg) { console.error(`${rule.location}:`, msg) }
+
+    default_goal() {
+	return this.goals[0] || (this.rules.normal && this.rules.normal[0].target)
+    }
+
+    normalize() {
+	this.rules_raw.forEach( rule => {
+	    str2list(rule.target).forEach( target => {
+		if (rule.target.indexOf('%') !== -1) {
+		    // TODO
+		} else {
+		    // normal rules
+		    let prev_idx = this.rules.normal.findIndex( val => val.target === target)
+		    let prev_deps = []
+		    if (prev_idx !== -1) {
+			this.log(rule, `overriding recipe for target '${target}', ${this.rules.normal[prev_idx].location}`)
+			// save the deps & rm the old entry
+			prev_deps = this.rules.normal[prev_idx].deps
+			this.rules.normal.splice(prev_idx, 1)
+		    }
+		    let deps = [...new Set(prev_deps.concat(str2list(rule.deps)))]
+		    this.rules.normal.push(new Rule(rule.location, target, deps, rule.recipes))
+		}
+	    })
+	})
+    }
+}
+
 // CLI
 
 let tokenize_file = function(file) {
@@ -400,13 +443,13 @@ if (process.argv[1] === __filename) {
     }
 
     let makefiles = []
-    let targets = []		// TODO
+    let goals = []		// TODO
     let user_vars = []
 
-    let skip = 0
+    let skip = -1
     let args = process.argv.slice(2)
     for (let idx=0; idx < args.length; ++idx) {
-	if (skip > idx) continue
+	if (skip >= idx) continue
 	let opt = args[idx]
 
 	if (opt === '-f') {
@@ -423,23 +466,33 @@ if (process.argv[1] === __filename) {
 	}
 	else if (opt.indexOf('=') !== -1) { // FOO=bar
 	    user_vars = user_vars.concat(new FirstTokenizer(opt, 'cmd').tokenize())
-	} else targets.push(opt)
+	} else goals.push(opt)
     }
 
     if (!makefiles.length) err(2, 'no makefile found')
 
     let tokens = [].concat(...makefiles.map( file => tokenize_file(file)))
 	.concat(user_vars)
-    console.log(tokens)
+    if (conf.verbose) console.log(tokens)
 
     let parser = new Parser(tokens)
     parser.parse()
-    console.log(parser.vars)
-    console.log(parser.rules)
+    if (conf.verbose) {
+	console.log(parser.vars)
+	console.log(parser.rules)
+	console.log('')
+    }
 
-    console.log('')
     let expander = new Expander(parser, Functions)
     expander.expand()
-    console.log(parser.vars)
-    console.log(parser.rules)
+    if (conf.verbose) {
+	console.log(parser.vars)
+	console.log(parser.rules)
+	console.log('')
+    }
+
+    let maker = new Maker(parser.rules, goals)
+    maker.normalize()
+    console.log(maker.rules)
+    console.log('DEFAULT GOAL:', maker.default_goal())
 }
