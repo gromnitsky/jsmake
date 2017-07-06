@@ -3,6 +3,7 @@
 let util = require('util')
 let path = require('path')
 let fs = require('fs')
+let cp = require('child_process')
 
 let inspect = v => util.inspect(v, {depth:null})
 
@@ -379,7 +380,7 @@ exports.Expander = Expander
 exports.Functions = Functions
 
 let str2list = function(str) {
-    return [...new Set(str.split(/\s+/))]
+    return [...new Set(str.trim().split(/\s+/))].filter( val => val.length)
 }
 
 class Maker {
@@ -398,16 +399,30 @@ class Maker {
 	return this.goals[0] || (this.rules.normal && this.rules.normal[0].target)
     }
 
+    glob(rule) {
+	let r = new Rule(rule.location, null, null, rule.recipes);
+	['target', 'deps'].forEach( attr => {
+	    r[attr] = str2list(rule[attr]).map( val => {
+		let r = cp.spawnSync('/bin/sh', ['-c', `echo ${val}`])
+		if (r.status !== 0) this.log(rule, `suspicious target: ${val}`)
+		return r.status !== 0 ? val : r.stdout.toString()
+	    }).join(' ')
+	})
+	return r
+    }
+
     normalize() {
 	this.rules_raw.forEach( rule => {
+	    rule = this.glob(rule)
+
 	    str2list(rule.target).forEach( target => {
 		if (rule.target.indexOf('%') !== -1) {
 		    // TODO
 		} else {
 		    // normal rules
-		    let prev_idx = this.rules.normal.findIndex( val => val.target === target)
+		    let prev_idx = this.rule_indexOf(target)
 		    let prev_deps = []
-		    if (prev_idx !== -1) {
+		    if (prev_idx !== -1 && rule.recipes.length) {
 			this.log(rule, `overriding recipe for target '${target}', ${this.rules.normal[prev_idx].location}`)
 			// save the deps & rm the old entry
 			prev_deps = this.rules.normal[prev_idx].deps
@@ -418,6 +433,30 @@ class Maker {
 		}
 	    })
 	})
+    }
+
+    rule_indexOf(target) {
+	return this.rules.normal.findIndex( val => val.target === target)
+    }
+
+    rule_find(target) {
+	return this.rules.normal[this.rule_indexOf(target)]
+    }
+
+    deps(target, _visited = {}) {
+	let rule = this.rule_find(target)
+	if (!rule) return []
+
+	let r = []
+	r.push(rule.deps)
+	_visited[target] = _visited[target] || 1
+	for (let val of rule.deps) {
+	    if (_visited[val] === 1)
+		throw new Error(`a cycle between '${target}' & '${val}'`)
+	    _visited[val] = 2
+	    r.push(this.deps(val, _visited))
+	}
+	return [].concat(...r)
     }
 }
 
@@ -473,11 +512,11 @@ if (process.argv[1] === __filename) {
 
     let tokens = [].concat(...makefiles.map( file => tokenize_file(file)))
 	.concat(user_vars)
-    if (conf.verbose) console.log(tokens)
+    if (conf.verbose >= 2) console.log(tokens)
 
     let parser = new Parser(tokens)
     parser.parse()
-    if (conf.verbose) {
+    if (conf.verbose >= 2) {
 	console.log(parser.vars)
 	console.log(parser.rules)
 	console.log('')
@@ -485,7 +524,7 @@ if (process.argv[1] === __filename) {
 
     let expander = new Expander(parser, Functions)
     expander.expand()
-    if (conf.verbose) {
+    if (conf.verbose >= 2) {
 	console.log(parser.vars)
 	console.log(parser.rules)
 	console.log('')
@@ -495,4 +534,5 @@ if (process.argv[1] === __filename) {
     maker.normalize()
     console.log(maker.rules)
     console.log('DEFAULT GOAL:', maker.default_goal())
+    console.log('deps:', inspect(maker.deps(maker.default_goal())))
 }
