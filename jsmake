@@ -387,17 +387,16 @@ class Maker {
     constructor(expanded_rules, goals) {
 	this.rules_raw = expanded_rules
 	this.rules = {
-	    normal: [],
-	    implicit: []
+	    normal: {},
+	    implicit: {}
 	}
 	this.goals = goals
+	this._default_goal = null
     }
 
     log(rule, msg) { console.error(`${rule.location}:`, msg) }
 
-    default_goal() {
-	return this.goals[0] || (this.rules.normal && this.rules.normal[0].target)
-    }
+    default_goal() { return this.goals[0] || this._default_goal }
 
     glob(rule) {
 	let r = new Rule(rule.location, null, null, rule.recipes);
@@ -420,35 +419,26 @@ class Maker {
 		    // TODO
 		} else {
 		    // normal rules
-		    let prev_idx = this.rule_indexOf(target)
-		    let prev_deps = []
-		    if (prev_idx !== -1 && rule.recipes.length) {
-			this.log(rule, `overriding recipe for target '${target}', ${this.rules.normal[prev_idx].location}`)
-			// save the deps & rm the old entry
-			prev_deps = this.rules.normal[prev_idx].deps
-			this.rules.normal.splice(prev_idx, 1)
+		    this._default_goal = this._default_goal || target
+
+		    let deps = str2list(rule.deps)
+		    let prev = this.rules.normal[target]
+		    if (prev && rule.recipes.length) {
+			this.log(rule, `overriding recipe for target '${target}', ${prev.location}`)
+			deps = [...new Set(prev.deps.concat(deps))]
+			delete this.rules.normal[target]
 		    }
-		    let deps = [...new Set(prev_deps.concat(str2list(rule.deps)))]
-		    this.rules.normal.push(new Rule(rule.location, target, deps, rule.recipes))
+		    this.rules.normal[target] = new Rule(rule.location, target, deps, rule.recipes)
 		}
 	    })
 	})
     }
 
-    rule_indexOf(target) {
-	return this.rules.normal.findIndex( val => val.target === target)
-    }
-
-    rule_find(target) {
-	return this.rules.normal[this.rule_indexOf(target)]
-    }
-
     deps(target, _visited = {}) {
-	let rule = this.rule_find(target)
+	let rule = this.rules.normal[target]
 	if (!rule) return []
 
-	let r = []
-	r.push(rule.deps)
+	let r = [rule.deps]
 	_visited[target] = _visited[target] || 1
 	for (let val of rule.deps) {
 	    if (_visited[val] === 1)
