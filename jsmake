@@ -396,7 +396,10 @@ class Maker {
 	this._default_goal = null
     }
 
-    log(rule, msg) { console.error(`${rule.location}:`, msg) }
+    log(rule, msg) {
+	if (rule) console.error(`${rule.location}:`, msg)
+	else console.error(msg)
+    }
 
     default_goal() { return this.goals[0] || this._default_goal }
 
@@ -437,19 +440,104 @@ class Maker {
 	})
     }
 
-    deps(target, _visited = {}) {
+    // depth-first
+    traverse(target, callback, _visited = {}) {
 	let rule = this.rules.normal[target]
-	if (!rule) return []
+	if (!rule) return
 
-	let r = [rule.deps]
 	_visited[target] = _visited[target] || 1
 	for (let val of rule.deps) {
 	    if (_visited[val] === 1)
 		throw new Error(`a cycle between '${target}' & '${val}'`)
 	    _visited[val] = 2
-	    r.push(this.deps(val, _visited))
+	    if (callback) callback.call(this, val)
+	    this.traverse(val, callback, _visited)
 	}
-	return [].concat(...r)
+    }
+
+    // return the list of all the deps for TARGET
+    deps(target) {
+	let r = []
+	this.traverse(target, v => r.push(v))
+	return r
+    }
+
+    mtime(file) {
+	try {
+	    return { error: null, mtime: fs.statSync(file).mtime }
+	} catch (error) {
+	    return { error }
+	}
+    }
+
+    remake(target, forced, opt) {
+	let rule = this.rules.normal[target]
+	if (!rule && fs.existsSync(target)) return false
+	if (!rule) throw new Error(`no rule to make target '${target}'`)
+
+	if (forced) {
+	    this.recipe_run(target, opt)
+	    return true
+	}
+
+	let timestamp = this.mtime(target)
+	if (timestamp.error) {
+	    if (timestamp.error.code === 'ENOENT') {
+		// the target is missing
+		this.recipe_run(target, opt)
+		return true
+	    } else
+		throw err
+	}
+
+	// the file exists but is has no prerequisites
+	if (!rule.deps.length) {
+	    this.log(null, `target '${target}' is up to date`)
+	    return false
+	}
+
+	// get the min mtime of the prereqs
+	let deps_mtime = rule.deps.map( file => {
+	    let t = this.mtime(file)
+	    console.log(file, t.mtime)
+	    return t.error ? new Date('1970') : t.mtime
+	}).reduce( (min, cur) => Math.min(min, cur))
+
+	console.log(deps_mtime)
+	if (timestamp.mtime > deps_mtime) {
+	    this.recipe_run(target, opt)
+	    return true
+	}
+
+	return false
+    }
+
+    recipe_run(target, opt) {
+	let rule = this.rules.normal[target]
+	if (!rule.recipes.length) return
+
+	rule.recipes.forEach( line => {
+	    let silent
+	    let ignore_exit_code
+
+	    if (opt.touch) {
+		line = `touch ${target}`
+	    } else {
+		if (line[0] === '@') silent = true
+		else if (line[0] === '-') ignore_exit_code = true
+
+		if (/[@+-]/.test(line[0])) line = line.slice(1)
+	    }
+
+	    if (!silent || opt.dry_run) process.stdout.write(line + "\n")
+	    if (opt.dry_run) return
+
+	    try {
+		process.stdout.write(cp.execSync(line))
+	    } catch (err) {
+		if (!ignore_exit_code) throw err
+	    }
+	})
     }
 }
 
@@ -468,14 +556,13 @@ let err = function(exit_code, ...args) {
 // Main
 if (process.argv[1] === __filename) {
     let conf = {
-	version: '0.0.1',	// meta
-	verbose: 0,		// TODO
-	touch: false,		// TODO
-	dry_run: false,		// TODO
+	verbose: 0,
+	touch: false,
+	dry_run: false,
     }
 
     let makefiles = []
-    let goals = []		// TODO
+    let goals = []
     let user_vars = []
 
     let skip = -1
@@ -493,7 +580,7 @@ if (process.argv[1] === __filename) {
 	else if (opt === '-t') conf.touch = true
 	else if (opt === '-n') conf.dry_run = true
 	else if (opt === '-v') {
-	    console.log(conf.version)
+	    console.log('0.0.1')
 	    process.exit(0)
 	}
 	else if (opt.indexOf('=') !== -1) { // FOO=bar
@@ -527,5 +614,15 @@ if (process.argv[1] === __filename) {
     maker.normalize()
     console.log(maker.rules)
     console.log('DEFAULT GOAL:', maker.default_goal())
-    console.log('deps:', inspect(maker.deps(maker.default_goal())))
+    console.log('goals:', goals);
+    (goals.length ? goals : [maker.default_goal()]).forEach( goal => {
+	let deps = maker.deps(goal)
+	console.log(goal + ':', deps)
+	let forced = false;
+	deps.reverse().concat(goal).forEach( prereq => {
+	    console.log(`TARGET: ${prereq}, forced=${forced}`)
+	    let r = maker.remake(prereq, forced, conf)
+	    forced = r
+	})
+    })
 }
