@@ -392,3 +392,22 @@ suite('Functions', function() {
 	assert.deepEqual(make.Functions.subst('ee', 'EE', 'feet on the street'), 'fEEt on the strEEt')
     })
 })
+
+suite('Maker', function() {
+    setup(function() {
+	this.empty_maker = new make.Maker()
+    })
+
+    test('stem', function() {
+	let stem = this.empty_maker.stem
+	assert.equal(stem('e%t', 'src/eat'), 'src/a')
+	assert.equal(stem('c%r', 'src/car'), 'src/a')
+
+	assert.equal(stem('e%t', 'eat'), 'a')
+
+	assert.equal(stem('invalid', 'src/car'), undefined)
+
+	assert.equal(stem('lib/%.o', 'lib/foo.o'), 'foo')
+	assert.equal(stem('lib/%.c', 'lib/foo.c'), 'foo')
+    })
+})

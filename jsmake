@@ -420,9 +420,17 @@ class Maker {
 	this.parser.rules.forEach( rule => {
 	    rule = this.glob(rule)
 
-	    str2list(rule.target).forEach( target => {
+	    let targets = str2list(rule.target)
+	    targets.forEach( target => {
 		if (rule.target.indexOf('%') !== -1) {
-		    // TODO
+		    // implicit rules
+		    if (targets.some( val => val.indexOf('%') === -1))
+			throw new Error(`${rule.location}: mixed implicit and normal rules`)
+		    if (this.rules.implicit[target] && !rule.recipes.length) {
+			// cancel the existing implicit rule
+			delete this.rules.implicit[target]
+		    } else
+			this.rules.implicit[target] = new Rule(rule.location, target, str2list(rule.deps), rule.recipes)
 		} else {
 		    // normal rules
 		    this._default_goal = this._default_goal || target
@@ -432,7 +440,6 @@ class Maker {
 		    if (prev && rule.recipes.length) {
 			this.log(rule, `overriding recipe for target '${target}', ${prev.location}`)
 			deps = [...new Set(prev.deps.concat(deps))]
-			delete this.rules.normal[target]
 		    }
 		    this.rules.normal[target] = new Rule(rule.location, target, deps, rule.recipes)
 		}
@@ -456,10 +463,55 @@ class Maker {
     }
 
     // return the list of all the deps for TARGET
-    deps(target) {
+    deps(target, _dont_check_for_absentees) {
 	let r = []
 	this.traverse(target, v => r.push(v))
+	if (_dont_check_for_absentees) return r
+
+	let absent = r.filter( v => !this.rules.normal[v])
+	if (absent.length) {
+	    this.genrules(absent)
+	    return this.deps(target, 1) // try again 1 more time (but only once)
+	}
 	return r
+    }
+
+    // add to `this.rules.normal` newly generated rules for TARGETS
+    // using `this.rules.implicit`; may add nothing if there are no
+    // suitable implicit rules available.
+    genrules(targets) {
+
+    }
+
+    stem(pattern, file) {
+	let split = f => {
+	    return {dir: path.dirname(f), name: path.basename(f)}
+	}
+	let affixes = function(f) {
+	    let t = f.split('%')
+	    return { prefix: t[0], suffix: t.slice(1).join('%') }
+	}
+
+	let aff = affixes(pattern)
+
+	// does the prefix & the suffix of PATTERN match the p&s
+	// of FILE?
+	if (pattern.indexOf('/') === -1) {
+	    // when the pattern doesn't contain '/', a dir name in
+	    // FILE is removed from it before comparation & prepended
+	    // to the final result
+	    let fl = split(file)
+	    if (aff.prefix === fl.name.slice(0, aff.prefix.length)
+		&& aff.suffix === fl.name.slice(-aff.suffix.length)) {
+		let s = fl.name.slice(aff.prefix.length, -aff.suffix.length)
+		return fl.dir === '.' ? s : [fl.dir, s].join('/')
+	    }
+	} else { // a simple case
+	    if (aff.prefix === file.slice(0, aff.prefix.length)
+		&& aff.suffix === file.slice(-aff.suffix.length)) {
+		return file.slice(aff.prefix.length, -aff.suffix.length)
+	    }
+	}
     }
 
     mtime(file) {
@@ -499,12 +551,12 @@ class Maker {
 	// get the min mtime of the prereqs
 	let deps_mtime = rule.deps.map( file => {
 	    let t = this.mtime(file)
-	    console.log(file, t.mtime)
+//	    console.log(file, t.mtime)
 	    return t.error ? new Date('1970') : t.mtime
 	}).reduce( (min, cur) => Math.min(min, cur))
 
-	console.log(deps_mtime)
-	if (timestamp.mtime > deps_mtime) {
+//	console.log(deps_mtime)
+	if (timestamp.mtime < deps_mtime) {
 	    this.recipe_run(target, opt)
 	    return true
 	}
@@ -540,6 +592,8 @@ class Maker {
 	})
     }
 }
+
+exports.Maker = Maker
 
 // CLI
 
@@ -617,7 +671,7 @@ if (process.argv[1] === __filename) {
     console.log('goals:', goals);
     (goals.length ? goals : [maker.default_goal()]).forEach( goal => {
 	let deps = maker.deps(goal)
-	console.log(goal + ':', deps)
+	console.log(goal + ' deps:', deps)
 	let forced = false;
 	deps.reverse().concat(goal).forEach( prereq => {
 	    console.log(`TARGET: ${prereq}, forced=${forced}`)
