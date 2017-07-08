@@ -65,7 +65,7 @@ suite('Parser', function() {
     test('empty', function() {
 	let parser = new make.Parser([])
 	parser.parse()
-	assert.deepEqual(parser.vars, {})
+	assert.deepEqual(Object.keys(parser.vars), ['SHELL'])
 	assert.deepEqual(parser.rules, [])
     })
 
@@ -78,6 +78,14 @@ baz=1
 	let parser = new make.Parser(tokens)
 	parser.parse()
 	assert.deepEqual(parser.vars, {
+	     "SHELL": {
+		 "location": {
+		     "line": -1,
+		     "src": "def",
+		 },
+		 "name": "SHELL",
+		 "value": "/bin/sh",
+	     },
 	    "baz": {
 		value: "1",
 		name: "baz",
@@ -117,7 +125,6 @@ b: c
 `, "test").tokenize()
 	let parser = new make.Parser(tokens)
 	parser.parse()
-	assert.deepEqual(parser.vars, {})
 	assert.deepEqual(parser.rules, [{
 	    target: 'a',
 	    "deps": "",
@@ -272,6 +279,7 @@ $(q): $(dirs)
 	    parser.vars[v] = parser.vars[v].value
 	})
 	assert.deepEqual(parser.vars, {
+	    "SHELL": "/bin/sh",
             "bar": "$(subst /qqq,/bar,-/qqq/www)",
             "dirs": "$(dir  /foo/bar    /home/bob) $(bar)   $(dir /etc/news)",
             "name": "Bob $(bar)",
