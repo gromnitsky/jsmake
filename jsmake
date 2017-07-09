@@ -390,7 +390,8 @@ class Maker {
 	this.parser = parser
 	this.rules = {
 	    normal: {},
-	    implicit: {}
+	    implicit: {},
+	    generated: []
 	}
 	this.goals = goals
 	this._default_goal = null
@@ -470,23 +471,69 @@ class Maker {
 
 	let absent = r.filter( v => !this.rules.normal[v])
 	if (absent.length) {
-	    this.genrules(absent)
+	    absent.forEach( t => this.genrule(t))
 	    return this.deps(target, 1) // try again 1 more time (but only once)
 	}
 	return r
     }
 
-    // add to `this.rules.normal` newly generated rules for TARGETS
-    // using `this.rules.implicit`; may add nothing if there are no
-    // suitable implicit rules available.
-    genrules(targets) {
+    // add to `this.rules.normal` a newly generated rule for TARGET
+    // using `this.rules.implicit` collection; may add nothing if
+    // there are no suitable implicit rules available.
+    genrule(target) {
+	if (target in this.rules.normal) return
 
+	let candidates = []
+	for (let key in this.rules.implicit) {
+	    let rule = this.rules.implicit[key]
+
+	    let stem = Maker.stem(rule.target, target)
+	    if (!stem) continue
+
+	    let candidate = new Rule(new Location('implicit', -1), target)
+	    candidate.stem = stem
+	    candidate.rank = 0
+	    candidate.deps = rule.deps.map( dep => {
+		let prereq
+		if (rule.target.indexOf('/') === -1) {
+		    let st = Maker.split(stem)
+		    let d = dep.replace('%', st.name)
+		    prereq = st.dir === '.' ? d : [st.dir, d].join('/')
+		} else
+		    prereq = dep.replace('%', stem)
+		if (fs.existsSync(prereq)) candidate.rank += 1
+		return prereq
+	    })
+	    candidate.recipes = rule.recipes
+	    candidates.push(candidate)
+	}
+
+	let nominee = Maker.nominee(candidates)
+	if (!nominee) return
+	this.rules.normal[nominee.target] = nominee
+	this.rules.generated.push(nominee) // for stats
     }
 
-    stem(pattern, file) {
-	let split = f => {
-	    return {dir: path.dirname(f), name: path.basename(f)}
-	}
+    // return the most desirable candidate among RULES, according to
+    // the rank & the stem length
+    static nominee(rules) {
+	let max_rank = rules.reduce( (acc, cur, idx) => {
+	    return { idx, rank: Math.max(acc.rank, cur.rank) }
+	}, {idx: -1, rank: -1})
+	let min_stem = rules.reduce( (acc, cur, idx) => {
+	    return { idx, stem: cur.stem, stem_len: Math.min(acc.stem.length, cur.stem.length) }
+	}, {idx: -1, stem: '', stem_len: 0})
+
+	if (max_rank.rank > 0) return rules[max_rank.idx]
+	return rules[min_stem.idx]
+    }
+
+
+    static split(file) {
+	return { dir: path.dirname(file), name: path.basename(file) }
+    }
+
+    static stem(pattern, file) {
 	let affixes = function(f) {
 	    let t = f.split('%')
 	    return { prefix: t[0], suffix: t.slice(1).join('%') }
@@ -500,7 +547,7 @@ class Maker {
 	    // when the pattern doesn't contain '/', a dir name in
 	    // FILE is removed from it before comparation & prepended
 	    // to the final result
-	    let fl = split(file)
+	    let fl = Maker.split(file)
 	    if (aff.prefix === fl.name.slice(0, aff.prefix.length)
 		&& aff.suffix === fl.name.slice(-aff.suffix.length)) {
 		let s = fl.name.slice(aff.prefix.length, -aff.suffix.length)
@@ -646,35 +693,37 @@ if (process.argv[1] === __filename) {
 
     let tokens = [].concat(...makefiles.map( file => tokenize_file(file)))
 	.concat(user_vars)
-    if (conf.verbose >= 3) console.log(tokens)
+    if (conf.verbose >= 3) console.error(tokens)
 
     let parser = new Parser(tokens)
     parser.parse()
     if (conf.verbose >= 2) {
-	console.log(parser.vars)
-	console.log(parser.rules)
-	console.log('')
+	console.error(parser.vars)
+	console.error(parser.rules)
+	console.error('')
     }
 
     let expander = new Expander(parser, Functions)
     expander.expand()
     if (conf.verbose >= 2) {
-	console.log(parser.vars)
-	console.log(parser.rules)
-	console.log('')
+	console.error(parser.vars)
+	console.error(parser.rules)
+	console.error('')
     }
 
     let maker = new Maker(parser, goals)
     maker.normalize()
-    console.log(maker.rules)
-    console.log('DEFAULT GOAL:', maker.default_goal())
-    console.log('goals:', goals);
+    console.error(maker.rules)
+    console.error('DEFAULT GOAL:', maker.default_goal())
+    console.error('goals:', goals);
     (goals.length ? goals : [maker.default_goal()]).forEach( goal => {
+	maker.genrule(goal)
 	let deps = maker.deps(goal)
-	console.log(goal + ' deps:', deps)
+	console.error(goal + ' deps:', deps)
+	console.error('rules generated:', maker.rules.generated)
 	let forced = false;
 	deps.reverse().concat(goal).forEach( prereq => {
-	    console.log(`TARGET: ${prereq}, forced=${forced}`)
+	    console.error(`TARGET: ${prereq}, forced=${forced}`)
 	    let r = maker.remake(prereq, forced, conf)
 	    forced = r
 	})

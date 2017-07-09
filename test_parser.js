@@ -395,11 +395,10 @@ suite('Functions', function() {
 
 suite('Maker', function() {
     setup(function() {
-	this.empty_maker = new make.Maker()
     })
 
     test('stem', function() {
-	let stem = this.empty_maker.stem
+	let stem = make.Maker.stem
 	assert.equal(stem('e%t', 'src/eat'), 'src/a')
 	assert.equal(stem('c%r', 'src/car'), 'src/a')
 
