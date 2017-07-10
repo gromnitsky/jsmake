@@ -628,6 +628,8 @@ class Maker {
 		if (/[@+-]/.test(line[0])) line = line.slice(1)
 	    }
 
+	    line = this.recipe_line_expand(rule, line)
+
 	    if (!silent || opt.dry_run) process.stdout.write(line + "\n")
 	    if (opt.dry_run) return
 
@@ -637,6 +639,20 @@ class Maker {
 		if (!ignore_exit_code) throw err
 	    }
 	})
+    }
+
+    // return a fully expanded line
+    recipe_line_expand(rule, line) {
+	let exp = new Expander(new Parser([]), Functions)
+	exp.parser.vars = this.parser.vars
+
+	// automatic variables
+	exp.parser.vars['@'] = new Var(rule.location, '@', rule.target)
+	exp.parser.vars['<'] = new Var(rule.location, '<', rule.deps[0])
+	exp.parser.vars['^'] = new Var(rule.location, '^', rule.deps.join(' '))
+	exp.parser.vars['*'] = new Var(rule.location, '*', rule.stem)
+
+	return exp._expand(exp.parse(new Var(rule.location, 'dummy4', line)))
     }
 }
 
