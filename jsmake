@@ -592,7 +592,12 @@ class Maker {
 
     remake(target, forced, opt) {
 	let rule = this.rules.normal[target]
-	if (!rule && fs.existsSync(target)) return false
+	let verbosity = opt._last ? 0 : 1
+
+	if (!rule && fs.existsSync(target)) {
+	    this.log(verbosity, `nothing to be done for '${target}'`)
+	    return forced	// carry the load
+	}
 	if (!rule) throw new Error(`no rule to make target '${target}'`)
 
 	if (forced) {
@@ -612,7 +617,7 @@ class Maker {
 
 	// the file exists but is has no prerequisites
 	if (!rule.deps.length) {
-	    this.log(0, `target '${target}' is up to date`)
+	    this.log(verbosity, `target '${target}' is up to date`)
 	    return false
 	}
 
@@ -632,7 +637,10 @@ class Maker {
 
     recipe_run(target, opt) {
 	let rule = this.rules.normal[target]
-	if (!rule.recipes.length) return
+	if (!rule.recipes.length) {
+	    this.log(opt._last ? 0 : 1, `nothing to be done for '${target}'`)
+	    return
+	}
 
 	rule.recipes.forEach( line => {
 	    let silent
@@ -762,12 +770,15 @@ if (process.argv[1] === __filename) {
 	logger.write(1, 'rules generated:', maker.rules.generated.length)
 	logger.write(2, 'rules generated:', maker.rules.generated)
 
-	let forced = false;
-	deps.reverse().concat(goal).forEach( prereq => {
+	let forced = false
+	deps.reverse().concat(goal).forEach( (prereq, idx) => {
 	    logger.write(1)
-	    logger.write(1, `TARGET: ${prereq},  forced=${forced}`)
-	    let r = maker.remake(prereq, forced, conf)
-	    forced = r
+	    logger.write(1, `TARGET: ${prereq}, forced=${forced}`)
+	    let opt = conf
+	    // tell remake() that this target was the goal
+	    if (idx === deps.length) opt = Object.assign({ _last: 1 }, conf)
+
+	    forced = maker.remake(prereq, forced, opt)
 	})
     })
 }
