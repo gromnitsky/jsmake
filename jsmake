@@ -572,14 +572,15 @@ class Maker {
 	    // to the final result
 	    let fl = Maker.split(file)
 	    if (aff.prefix === fl.name.slice(0, aff.prefix.length)
-		&& aff.suffix === fl.name.slice(-aff.suffix.length)) {
-		let s = fl.name.slice(aff.prefix.length, -aff.suffix.length)
+		&& aff.suffix === fl.name.slice(fl.name.length + -aff.suffix.length)) {
+		let s = fl.name.slice(aff.prefix.length,
+				      fl.name.length + -aff.suffix.length)
 		return fl.dir === '.' ? s : [fl.dir, s].join('/')
 	    }
 	} else { // a simple case
 	    if (aff.prefix === file.slice(0, aff.prefix.length)
-		&& aff.suffix === file.slice(-aff.suffix.length)) {
-		return file.slice(aff.prefix.length, -aff.suffix.length)
+		&& aff.suffix === file.slice(file.length + -aff.suffix.length)) {
+		return file.slice(aff.prefix.length, file.length + -aff.suffix.length)
 	    }
 	}
     }

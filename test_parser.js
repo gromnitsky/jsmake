@@ -407,4 +407,10 @@ suite('Maker', function() {
 	assert.equal(stem('lib/%.o', 'lib/foo.o'), 'foo')
 	assert.equal(stem('lib/%.c', 'lib/foo.c'), 'foo')
     })
+
+    test('stem-empty-suffix', function() {
+	let stem = make.Maker.stem
+	assert.equal(stem('pp-%', 'pp-files'), 'files')
+	assert.equal(stem('p/p-%', 'p/p-files'), 'files')
+    })
 })
