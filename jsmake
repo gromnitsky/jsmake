@@ -523,6 +523,8 @@ class Maker {
 		} else
 		    prereq = dep.replace('%', stem)
 		if (fs.existsSync(prereq)) candidate.rank += 1
+
+		this.genrule(prereq) // recursion!
 		return prereq
 	    })
 	    candidate.recipes = rule.recipes
@@ -632,6 +634,7 @@ class Maker {
 	    return true
 	}
 
+	this.log(verbosity, `target '${target}' is up to date`)
 	return false
     }
 
@@ -649,13 +652,13 @@ class Maker {
 	    if (opt.touch) {
 		line = `touch ${target}`
 	    } else {
+		line = this.recipe_line_expand(rule, line)
+
 		if (line[0] === '@') silent = true
 		else if (line[0] === '-') ignore_exit_code = true
 
 		if (/[@+-]/.test(line[0])) line = line.slice(1)
 	    }
-
-	    line = this.recipe_line_expand(rule, line)
 
 	    if (!silent || opt.dry_run) process.stdout.write(line + "\n")
 	    if (opt.dry_run) return
@@ -760,12 +763,18 @@ if (process.argv[1] === __filename) {
     maker.logger = logger
     maker.normalize()
     logger.write(2, maker.rules, "\n")
+    if (!maker.default_goal()) {
+	logger.write(0, 'no targets')
+	process.exit(2)
+    }
+
     logger.write(1, 'DEFAULT GOAL:', maker.default_goal())
     logger.write(1, 'goals:', goals);
 
     (goals.length ? goals : [maker.default_goal()]).forEach( goal => {
 	maker.genrule(goal)
 	let deps = maker.deps(goal)
+	logger.write(1)
 	logger.write(1, `${goal} deps:`, deps)
 	logger.write(1, 'rules generated:', maker.rules.generated.length)
 	logger.write(2, 'rules generated:', maker.rules.generated)
