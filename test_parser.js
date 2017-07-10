@@ -358,7 +358,6 @@ $(notdir /foo/bar): fo  o $(aa)
 	let parser = new make.Parser(tokens)
 	parser.parse()
 	let expander = new make.Expander(parser, make.Functions)
-	expander.log = () => {}
 	expander.expand()
 	parser.rules.forEach( v => delete v.location)
 	assert.deepEqual(parser.rules, [
@@ -375,7 +374,6 @@ q: $(a) $a$a 1 $a 2 $(a) 3 $a
 	let parser = new make.Parser(tokens)
 	parser.parse()
 	let expander = new make.Expander(parser, make.Functions)
-	expander.log = () => {}
 	expander.expand()
 	parser.rules.forEach( v => delete v.location)
 	assert.deepEqual(parser.rules[0].deps,

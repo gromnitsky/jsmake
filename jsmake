@@ -1,11 +1,8 @@
 #!/usr/bin/env node
 
-let util = require('util')
 let path = require('path')
 let fs = require('fs')
 let cp = require('child_process')
-
-let inspect = v => util.inspect(v, {depth:null})
 
 class Location {
     constructor(src, line, col, row) {
@@ -199,6 +196,22 @@ class STNode {
     }
 }
 
+class Logger {
+    constructor(verbosity, prefix) {
+	this.verbosity = verbosity
+	this.via = console.error
+	this.func = this.via.bind(console, prefix + ':')
+    }
+    write(level, ...args) {
+	if (level > this.verbosity) return
+	if (!args.length) {
+	    this.via('')
+	    return
+	}
+	this.func(...args)
+    }
+}
+
 class Expander {
     constructor(parser, functions) {
 	this.parser = parser
@@ -207,9 +220,12 @@ class Expander {
 	this.input = null
 	this.tok = null
 	this.location = new Location()
+	this.logger = null	// an external logger
     }
 
-    log(msg) { console.error(`${this.location}:`, msg) }
+    log(level, msg) {
+	this.logger && this.logger.write(level, `${this.location}:`, msg)
+    }
 
     advance() {
 	if (!this.input.length) return this.tok = null // end of input
@@ -270,7 +286,7 @@ class Expander {
 
 	if (this.tok === ')') {
 	    this.advance()
-	    this.log('an attempt to expand empty space')
+	    this.log(0, 'an attempt to expand empty space')
 	    return new STNode('term', '')
 	}
 
@@ -363,7 +379,7 @@ class Expander {
 		// check the environment
 		if (estr in process.env) return process.env[estr]
 
-		this.log(`undefined variable '${estr}'`)
+		this.log(0, `undefined variable '${estr}'`)
 		return '?'	// FIXME
 
 	    }).join('')
@@ -395,11 +411,15 @@ class Maker {
 	}
 	this.goals = goals
 	this._default_goal = null
+	this.logger = null	// an external logger
     }
 
-    log(rule, msg) {
-	if (rule) console.error(`${rule.location}:`, msg)
-	else console.error(msg)
+    log(level, ...msg) {
+	if (!this.logger) return
+	if (msg[0] instanceof Rule)
+	    this.logger.write(level, `${msg[0].location}:`, ...msg.slice(1))
+	else
+	    this.logger.write(level, ...msg)
     }
 
     default_goal() { return this.goals[0] || this._default_goal }
@@ -410,13 +430,14 @@ class Maker {
 	    r[attr] = str2list(rule[attr]).map( val => {
 		let r = cp.spawnSync(this.parser.vars.SHELL.value,
 				     ['-c', `echo ${val}`])
-		if (r.status !== 0) this.log(rule, `suspicious target: ${val}`)
+		if (r.status !== 0) this.log(0, rule, `suspicious target: ${val}`)
 		return r.status !== 0 ? val : r.stdout.toString()
 	    }).join(' ')
 	})
 	return r
     }
 
+    // FIXME: refactor
     normalize() {
 	this.parser.rules.forEach( rule => {
 	    rule = this.glob(rule)
@@ -439,7 +460,7 @@ class Maker {
 		    let deps = str2list(rule.deps)
 		    let prev = this.rules.normal[target]
 		    if (prev && rule.recipes.length) {
-			this.log(rule, `overriding recipe for target '${target}', ${prev.location}`)
+			this.log(0, rule, `overriding recipe for target '${target}', ${prev.location}`)
 			deps = [...new Set(prev.deps.concat(deps))]
 		    }
 		    this.rules.normal[target] = new Rule(rule.location, target, deps, rule.recipes)
@@ -591,18 +612,16 @@ class Maker {
 
 	// the file exists but is has no prerequisites
 	if (!rule.deps.length) {
-	    this.log(null, `target '${target}' is up to date`)
+	    this.log(0, `target '${target}' is up to date`)
 	    return false
 	}
 
 	// get the min mtime of the prereqs
 	let deps_mtime = rule.deps.map( file => {
 	    let t = this.mtime(file)
-//	    console.log(file, t.mtime)
 	    return t.error ? new Date('1970') : t.mtime
 	}).reduce( (min, cur) => Math.min(min, cur))
 
-//	console.log(deps_mtime)
 	if (timestamp.mtime < deps_mtime) {
 	    this.recipe_run(target, opt)
 	    return true
@@ -666,7 +685,7 @@ let tokenize_file = function(file) {
 }
 
 let err = function(exit_code, ...args) {
-    console.error(path.basename(process.argv[1]), 'error:', ...args)
+    console.error('jsmake error:', ...args)
     process.exit(exit_code)
 }
 
@@ -706,40 +725,47 @@ if (process.argv[1] === __filename) {
     }
 
     if (!makefiles.length) err(2, 'no makefile found')
+    let logger = new Logger(conf.verbose, 'jsmake')
 
     let tokens = [].concat(...makefiles.map( file => tokenize_file(file)))
 	.concat(user_vars)
-    if (conf.verbose >= 3) console.error(tokens)
+    if (conf.verbose >= 4) console.error(tokens)
 
     let parser = new Parser(tokens)
     parser.parse()
-    if (conf.verbose >= 2) {
+    if (conf.verbose >= 4) {
 	console.error(parser.vars)
 	console.error(parser.rules)
 	console.error('')
     }
 
     let expander = new Expander(parser, Functions)
+    expander.logger = logger
     expander.expand()
-    if (conf.verbose >= 2) {
+    if (conf.verbose >= 3) {
 	console.error(parser.vars)
 	console.error(parser.rules)
 	console.error('')
     }
 
     let maker = new Maker(parser, goals)
+    maker.logger = logger
     maker.normalize()
-    console.error(maker.rules)
-    console.error('DEFAULT GOAL:', maker.default_goal())
-    console.error('goals:', goals);
+    logger.write(2, maker.rules, "\n")
+    logger.write(1, 'DEFAULT GOAL:', maker.default_goal())
+    logger.write(1, 'goals:', goals);
+
     (goals.length ? goals : [maker.default_goal()]).forEach( goal => {
 	maker.genrule(goal)
 	let deps = maker.deps(goal)
-	console.error(goal + ' deps:', deps)
-	console.error('rules generated:', maker.rules.generated)
+	logger.write(1, `${goal} deps:`, deps)
+	logger.write(1, 'rules generated:', maker.rules.generated.length)
+	logger.write(2, 'rules generated:', maker.rules.generated)
+
 	let forced = false;
 	deps.reverse().concat(goal).forEach( prereq => {
-	    console.error(`TARGET: ${prereq}, forced=${forced}`)
+	    logger.write(1)
+	    logger.write(1, `TARGET: ${prereq},  forced=${forced}`)
 	    let r = maker.remake(prereq, forced, conf)
 	    forced = r
 	})
