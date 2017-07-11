@@ -4,7 +4,11 @@
 
 let assert = require('assert')
 let util = require('util')
+let cp = require('child_process')
+
 let make = require('./jsmake')
+
+let sh = cp.execSync
 
 suite('FirstTokenizer', function() {
     test('empty', function() {
@@ -346,8 +350,42 @@ suite('Functions', function() {
     })
 })
 
+class Eater extends make.Logger {
+    constructor(v, p) {
+	super(v, p)
+	this.logs = []
+	this.func = (...args) => {
+	    this.logs.push(args)
+	}
+    }
+}
+
+let capture_stdout = function(cb) {
+    let write = process.stdout.write
+    let stdout = []
+    process.stdout.write = str => stdout.push(str.toString())
+    try {
+	cb()
+    } catch (e) {
+	throw e
+    } finally {
+	process.stdout.write = write
+    }
+    return stdout
+}
+
 suite('Maker', function() {
     setup(function() {
+	this.save_dir = process.cwd()
+	sh('mkdir -p tmp')
+	process.chdir('tmp')
+	this.eater = new Eater(1, 'test')
+    })
+
+    teardown(function() {
+	process.chdir(this.save_dir)
+	sh('rm -rf tmp')
+	this.eater.logs = []
     })
 
     test('stem', function() {
@@ -367,5 +405,48 @@ suite('Maker', function() {
 	let stem = make.Maker.stem
 	assert.equal(stem('pp-%', 'pp-files'), 'files')
 	assert.equal(stem('p/p-%', 'p/p-files'), 'files')
+    })
+
+    test('chain of impilits', function() {
+	sh('touch 1.1')
+	let exp = tokenize_parse_expand(`
+convert = @echo convert $< to $@; touch $@
+
+files = 1.4 1.3 1.2
+
+%.4: %.3
+	$(convert)
+%.3: %.2
+	$(convert)
+%.2: %.1
+	$(convert)
+
+pp-%:
+	@echo $($*) | tr ' ' \\n
+`)
+	let maker = new make.Maker(exp.parser, ['1.4', '1.3'])
+	maker.logger = this.eater
+	maker.normalize()
+	let stdout = capture_stdout( () => maker.recompile())
+	assert.deepEqual(stdout, [ 'convert 1.1 to 1.2\n',
+				   'convert 1.2 to 1.3\n',
+				   'convert 1.3 to 1.4\n' ])
+	this.eater.logs = this.eater.logs.filter( v => v.length)
+	assert.deepEqual(this.eater.logs,
+			 [ [ '1.4 deps:', [ '1.1', '1.2', '1.3' ] ],
+			   [ 'rules generated:', 3 ],
+			   [ 'TARGET: 1.1, forced=false' ],
+			   [ 'nothing to be done for \'1.1\'' ],
+			   [ 'TARGET: 1.2, forced=false' ],
+			   [ 'TARGET: 1.3, forced=true' ],
+			   [ 'TARGET: 1.4, forced=true' ],
+			   [ '1.3 deps:', [ '1.1', '1.2' ] ],
+			   [ 'rules generated:', 3 ],
+			   [ 'TARGET: 1.1, forced=false' ],
+			   [ 'nothing to be done for \'1.1\'' ],
+			   [ 'TARGET: 1.2, forced=false' ],
+			   [ 'target \'1.2\' is up to date' ],
+			   [ 'TARGET: 1.3, forced=false' ],
+			   [ 'target \'1.3\' is up to date' ] ])
     })
 })

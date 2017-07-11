@@ -199,16 +199,10 @@ class STNode {
 class Logger {
     constructor(verbosity, prefix) {
 	this.verbosity = verbosity
-	this.via = console.error
-	this.func = this.via.bind(console, prefix + ':')
+	this.func = console.error.bind(console, prefix + ':')
     }
     write(level, ...args) {
-	if (level > this.verbosity) return
-	if (!args.length) {
-	    this.via('')
-	    return
-	}
-	this.func(...args)
+	if (level <= this.verbosity) this.func(...args)
     }
 }
 
@@ -392,6 +386,7 @@ class Expander {
 exports.Var = Var
 exports.Rule = Rule
 exports.FirstTokenizer = FirstTokenizer
+exports.Logger = Logger
 exports.Parser = Parser
 exports.Expander = Expander
 
@@ -706,6 +701,28 @@ class Maker {
 
 	return exp._expand(exp.parse(new Var(rule.location, 'dummy4', line)))
     }
+
+    recompile(conf = {}) {
+	(this.goals.length ? this.goals : [this.default_goal()]).forEach( goal => {
+	    this.genrule(goal)
+	    let deps = this.deps(goal)
+	    this.log(1)
+	    this.log(1, `${goal} deps:`, deps)
+	    this.log(1, 'rules generated:', this.rules.generated.length)
+	    this.log(2, 'rules generated:', this.rules.generated)
+
+	    let forced = false
+	    deps.reverse().concat(goal).forEach( (prereq, idx) => {
+		this.log(1)
+		this.log(1, `TARGET: ${prereq}, forced=${forced}`)
+		// tell remake() that this target was the goal
+		let opt = conf
+		if (idx === deps.length) opt = Object.assign({ _last: 1 }, conf)
+
+		forced = this.remake(prereq, forced, opt)
+	    })
+	})
+    }
 }
 
 exports.Maker = Maker
@@ -791,25 +808,7 @@ if (process.argv[1] === __filename) {
     }
 
     logger.write(1, 'DEFAULT GOAL:', maker.default_goal())
-    logger.write(1, 'goals:', goals);
+    logger.write(1, 'goals:', goals)
 
-    (goals.length ? goals : [maker.default_goal()]).forEach( goal => {
-	maker.genrule(goal)
-	let deps = maker.deps(goal)
-	logger.write(1)
-	logger.write(1, `${goal} deps:`, deps)
-	logger.write(1, 'rules generated:', maker.rules.generated.length)
-	logger.write(2, 'rules generated:', maker.rules.generated)
-
-	let forced = false
-	deps.reverse().concat(goal).forEach( (prereq, idx) => {
-	    logger.write(1)
-	    logger.write(1, `TARGET: ${prereq}, forced=${forced}`)
-	    let opt = conf
-	    // tell remake() that this target was the goal
-	    if (idx === deps.length) opt = Object.assign({ _last: 1 }, conf)
-
-	    forced = maker.remake(prereq, forced, opt)
-	})
-    })
+    maker.recompile(conf)
 }
