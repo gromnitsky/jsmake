@@ -374,6 +374,16 @@ let capture_stdout = function(cb) {
     return stdout
 }
 
+let tokenize_parse_expand_recompile = function(str, goals = [], verbosity = 0) {
+    let exp = tokenize_parse_expand(str)
+    let maker = new make.Maker(exp.parser, goals)
+    maker.logger = new Eater(verbosity, 'test')
+    maker.normalize()
+    let stdout = capture_stdout( () => maker.recompile())
+    maker.logger.logs = maker.logger.logs.filter( v => v.length)
+    return {stdout, maker}
+}
+
 suite('Maker', function() {
     setup(function() {
 	this.save_dir = process.cwd()
@@ -409,7 +419,7 @@ suite('Maker', function() {
 
     test('chain of impilits', function() {
 	sh('touch 1.1')
-	let exp = tokenize_parse_expand(`
+	let r = tokenize_parse_expand_recompile(`
 convert = @echo convert $< to $@; touch $@
 
 files = 1.4 1.3 1.2
@@ -423,16 +433,11 @@ files = 1.4 1.3 1.2
 
 pp-%:
 	@echo $($*) | tr ' ' \\n
-`)
-	let maker = new make.Maker(exp.parser, ['1.4', '1.3'])
-	maker.logger = this.eater
-	maker.normalize()
-	let stdout = capture_stdout( () => maker.recompile())
-	assert.deepEqual(stdout, [ 'convert 1.1 to 1.2\n',
-				   'convert 1.2 to 1.3\n',
-				   'convert 1.3 to 1.4\n' ])
-	this.eater.logs = this.eater.logs.filter( v => v.length)
-	assert.deepEqual(this.eater.logs,
+`, ['1.4', '1.3'], 1)
+	assert.deepEqual(r.stdout, [ 'convert 1.1 to 1.2\n',
+				     'convert 1.2 to 1.3\n',
+				     'convert 1.3 to 1.4\n' ])
+	assert.deepEqual(r.maker.logger.logs,
 			 [ [ '1.4 deps:', [ '1.1', '1.2', '1.3' ] ],
 			   [ 'rules generated:', 3 ],
 			   [ 'TARGET: 1.1, forced=false' ],
@@ -449,4 +454,92 @@ pp-%:
 			   [ 'TARGET: 1.3, forced=false' ],
 			   [ 'target \'1.3\' is up to date' ] ])
     })
+
+    test('cancel implicit rule', function() {
+	sh('touch 1.1')
+	assert.throws( () => {
+	    tokenize_parse_expand_recompile(`
+%.2: %.1
+	@echo making $@ from $<
+%.2: %.1
+foo: 1.2
+`)
+	}, /no rule to make target '1.2'/)
+    })
+
+    test('override', function() {
+	let r = tokenize_parse_expand_recompile(`
+foo: bar
+	@echo must not run
+foo: baz
+	@echo making $@ from $<
+bar:
+	@echo always making $@
+baz:
+`, [], 1)
+	assert.equal(r.maker.default_goal(), 'foo')
+	assert.deepEqual(Object.keys(r.maker.rules.normal),
+			 ['foo', 'bar', 'baz'])
+	assert.deepEqual(r.stdout,  ['always making bar\n',
+				     'making foo from bar\n'])
+	assert.deepEqual(r.maker.logger.logs,
+			 [ [ 'test:4:',
+			     'overriding recipe for target \'foo\', test:2' ],
+			   [ 'foo deps:', [ 'baz', 'bar' ] ],
+			   [ 'rules generated:', 0 ],
+			   [ 'TARGET: baz, forced=false' ],
+			   [ 'nothing to be done for \'baz\'' ],
+			   [ 'TARGET: bar, forced=true' ],
+			   [ 'TARGET: foo, forced=true' ] ])
+    })
+
+    test('empty', function() {
+	assert.throws( () => {
+	    tokenize_parse_expand_recompile('', ['foo'])
+	}, /no rule to make target 'foo'/)
+    })
+
+    test('implicit rule selection', function() {
+	let str = `
+convert = @echo "make $@ from $< (stem=$(*))"
+
+%.o: %.c
+	$(convert)
+
+%.o: %.f
+	$(convert)
+
+%.f:
+	@echo always create $@
+
+lib/%.o: lib/%.c
+	$(convert)
+`
+	// 1st rule
+	sh('touch bar.c bar.f')
+	let r = tokenize_parse_expand_recompile(str, ['bar.o'])
+	assert.deepEqual(r.stdout, ['make bar.o from bar.c (stem=bar)\n'])
+
+	// 2nd rule
+	sh('rm bar.c')
+	r = tokenize_parse_expand_recompile(str, ['bar.o'])
+	assert.deepEqual(r.stdout, ['make bar.o from bar.f (stem=bar)\n'])
+
+	// 1st rule
+	sh('rm bar.f')
+	r = tokenize_parse_expand_recompile(str, ['bar.o'])
+	assert.deepEqual(r.stdout, ['always create bar.f\n',
+				    'make bar.o from bar.f (stem=bar)\n'])
+
+	// 3rd rule
+	sh('mkdir lib && touch lib/bar.c lib/bar.f')
+	r = tokenize_parse_expand_recompile(str, ['lib/bar.o'])
+	assert.deepEqual(r.stdout, ["make lib/bar.o from lib/bar.c (stem=bar)\n"])
+
+	// 2nd rule
+	sh('rm lib/bar.c')
+	r = tokenize_parse_expand_recompile(str, ['lib/bar.o'])
+	assert.deepEqual(r.stdout, ["make lib/bar.o from lib/bar.f (stem=lib/bar)\n"])
+    })
+
 })
