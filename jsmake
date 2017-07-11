@@ -406,7 +406,7 @@ class Maker {
 	this.parser = parser
 	this.rules = {
 	    normal: {},
-	    implicit: {},
+	    implicit: [],
 	    generated: []
 	}
 	this.goals = goals
@@ -437,36 +437,41 @@ class Maker {
 	return r
     }
 
-    // FIXME: refactor
     normalize() {
-	this.parser.rules.forEach( rule => {
+	for (let rule of this.parser.rules) {
 	    rule = this.glob(rule)
+	    if (rule.target.indexOf('%') !== -1) this.normalize_implicit(rule)
+	    else this.normalize_normal(rule)
+	}
+    }
 
-	    let targets = str2list(rule.target)
-	    targets.forEach( target => {
-		if (rule.target.indexOf('%') !== -1) {
-		    // implicit rules
-		    if (targets.some( val => val.indexOf('%') === -1))
-			throw new Error(`${rule.location}: mixed implicit and normal rules`)
-		    if (this.rules.implicit[target] && !rule.recipes.length) {
-			// cancel the existing implicit rule
-			delete this.rules.implicit[target]
-		    } else
-			this.rules.implicit[target] = new Rule(rule.location, target, str2list(rule.deps), rule.recipes)
-		} else {
-		    // normal rules
-		    this._default_goal = this._default_goal || target
+    // fill `this.rules.implicit` if RULE is a proper implicit rule
+    normalize_implicit(rule) {
+	let targets = str2list(rule.target)
+	if (targets.length > 1) throw new Error(`${rule.location}: multiple targets aren't supported for implicit rules`)
+	let target = targets[0]
 
-		    let deps = str2list(rule.deps)
-		    let prev = this.rules.normal[target]
-		    if (prev && rule.recipes.length) {
-			this.log(0, rule, `overriding recipe for target '${target}', ${prev.location}`)
-			deps = [...new Set(prev.deps.concat(deps))]
-		    }
-		    this.rules.normal[target] = new Rule(rule.location, target, deps, rule.recipes)
-		}
-	    })
-	})
+	let prev_idx = this.rules.implicit.findIndex( v => v.target === target && JSON.stringify(v.deps) === JSON.stringify(str2list(rule.deps)))
+	if (prev_idx !== -1 && !rule.recipes.length) {
+	    // cancel out the existing implicit rule
+	    this.rules.implicit.splice(prev_idx, 1)
+	} else
+	    this.rules.implicit.push(new Rule(rule.location, target, str2list(rule.deps), rule.recipes))
+    }
+
+    // fill `this.rules.normal` with rules from RULE; also set a default goal
+    normalize_normal(rule) {
+	for (let target of str2list(rule.target)) {
+	    this._default_goal = this._default_goal || target
+
+	    let deps = str2list(rule.deps)
+	    let prev = this.rules.normal[target]
+	    if (prev && rule.recipes.length) {
+		this.log(0, rule, `overriding recipe for target '${target}', ${prev.location}`)
+		deps = [...new Set(prev.deps.concat(deps))]
+	    }
+	    this.rules.normal[target] = new Rule(rule.location, target, deps, rule.recipes)
+	}
     }
 
     // depth-first
@@ -502,19 +507,18 @@ class Maker {
     // using `this.rules.implicit` collection; may add nothing if
     // there are no suitable implicit rules available.
     genrule(target) {
-	if (target in this.rules.normal) return
+	if (target in this.rules.normal) return true
 
 	let candidates = []
-	for (let key in this.rules.implicit) {
-	    let rule = this.rules.implicit[key]
-
+	for (let rule of this.rules.implicit) {
 	    let stem = Maker.stem(rule.target, target)
 	    if (!stem) continue
 
 	    let candidate = new Rule(new Location('implicit', -1), target)
 	    candidate.stem = stem
 	    candidate.rank = 0
-	    candidate.deps = rule.deps.map( dep => {
+	    let deps = []
+	    for (let dep of rule.deps) {
 		let prereq
 		if (rule.target.indexOf('/') === -1) {
 		    let st = Maker.split(stem)
@@ -522,35 +526,51 @@ class Maker {
 		    prereq = st.dir === '.' ? d : [st.dir, d].join('/')
 		} else
 		    prereq = dep.replace('%', stem)
-		if (fs.existsSync(prereq)) candidate.rank += 1
 
-		this.genrule(prereq) // recursion!
-		return prereq
-	    })
+		if (!fs.existsSync(prereq)) {
+		    candidate.rank -= 1
+		    if (!this.genrule(prereq)) { // recursion!
+			candidate.invalid = true
+			break
+		    }
+		}
+		deps.push(prereq)
+	    }
+	    if (candidate.invalid) continue
+
+	    candidate.deps = deps
 	    candidate.recipes = rule.recipes
 	    candidates.push(candidate)
 	}
 
 	let nominee = Maker.nominee(candidates)
-	if (!nominee) return
+	if (!nominee) return false
 	this.rules.normal[nominee.target] = nominee
 	this.rules.generated.push(nominee) // for stats
+	return true
     }
 
     // return the most desirable candidate among RULES, according to
     // the rank & the stem length
     static nominee(rules) {
-	let max_rank = rules.reduce( (acc, cur, idx) => {
-	    return { idx, rank: Math.max(acc.rank, cur.rank) }
-	}, {idx: -1, rank: -1})
-	let min_stem = rules.reduce( (acc, cur, idx) => {
-	    return { idx, stem: cur.stem, stem_len: Math.min(acc.stem.length, cur.stem.length) }
-	}, {idx: -1, stem: '', stem_len: 0})
+	if (!rules.length) return
 
-	if (max_rank.rank > 0) return rules[max_rank.idx]
-	return rules[min_stem.idx]
+	let max_rank = rules.reduce( (acc, cur) => {
+	    return Math.max(acc, cur.rank)
+	}, Number.MIN_SAFE_INTEGER)
+	let min_stem = rules.reduce( (acc, cur) => {
+	    return { stem: cur.stem,
+		     len: Math.min(acc.stem.length, cur.stem.length) }
+	}, { stem: rules[0].stem, len: 0 })
+
+	let ranks_are_equal = rules.every( rule => rule.rank === max_rank)
+	let stem_len_are_equal = rules.every( rule => rule.stem.length === min_stem.len)
+	if (ranks_are_equal)
+	    return rules[rules.findIndex(v => v.stem.length === min_stem.len)]
+	if (stem_len_are_equal)
+	    return rules[rules.findIndex(v => v.rank === max_rank)]
+	return rules[0]
     }
-
 
     static split(file) {
 	return { dir: path.dirname(file), name: path.basename(file) }
