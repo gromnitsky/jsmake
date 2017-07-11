@@ -276,7 +276,7 @@ class Expander {
 	this.eat('$')
 
 	let single_char = this.tok[0] // $@, $<, etc
-	if (/[^$()]/.test(single_char) && (!this.tok[1] || /\s/.test(this.tok[1]))) {
+	if (/[^$()]/.test(single_char)) {
 	    this.pushback(this.tok.slice(1))
 	    this.advance()
 	    return new STNode('$').add_kid(new STNode('term', single_char))
