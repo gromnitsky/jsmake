@@ -514,7 +514,7 @@ class Maker {
 	    let stem = Maker.stem(rule.target, target)
 	    if (!stem) continue
 
-	    let candidate = new Rule(new Location('implicit', -1), target)
+	    let candidate = new Rule(rule.location, target)
 	    candidate.stem = stem
 	    candidate.rank = 0
 	    let deps = []
@@ -695,6 +695,7 @@ class Maker {
     // return a fully expanded line
     recipe_line_expand(rule, line) {
 	let exp = new Expander(new Parser([]), Functions)
+	exp.logger = this.logger
 	exp.parser.vars = this.parser.vars
 
 	// automatic variables
