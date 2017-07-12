@@ -417,7 +417,7 @@ suite('Maker', function() {
 	assert.equal(stem('p/p-%', 'p/p-files'), 'files')
     })
 
-    test('chain of impilits', function() {
+    test('chain of implicits', function() {
 	sh('touch 1.1')
 	let r = tokenize_parse_expand_recompile(`
 convert = @echo convert $< to $@; touch $@
@@ -438,20 +438,11 @@ pp-%:
 				     'convert 1.2 to 1.3\n',
 				     'convert 1.3 to 1.4\n' ])
 	assert.deepEqual(r.maker.logger.logs,
-			 [ [ '1.4 deps:', [ '1.1', '1.2', '1.3' ] ],
-			   [ 'rules generated:', 3 ],
-			   [ 'TARGET: 1.1, forced=false' ],
+			 [ [ '\'1.4\' deps:', [ '1.1', '1.2', '1.3' ] ],
 			   [ 'nothing to be done for \'1.1\'' ],
-			   [ 'TARGET: 1.2, forced=false' ],
-			   [ 'TARGET: 1.3, forced=true' ],
-			   [ 'TARGET: 1.4, forced=true' ],
-			   [ '1.3 deps:', [ '1.1', '1.2' ] ],
-			   [ 'rules generated:', 3 ],
-			   [ 'TARGET: 1.1, forced=false' ],
+			   [ '\'1.3\' deps:', [ '1.1', '1.2' ] ],
 			   [ 'nothing to be done for \'1.1\'' ],
-			   [ 'TARGET: 1.2, forced=false' ],
 			   [ 'target \'1.2\' is up to date' ],
-			   [ 'TARGET: 1.3, forced=false' ],
 			   [ 'target \'1.3\' is up to date' ] ])
     })
 
@@ -485,12 +476,8 @@ baz:
 	assert.deepEqual(r.maker.logger.logs,
 			 [ [ 'test:4:',
 			     'overriding recipe for target \'foo\', test:2' ],
-			   [ 'foo deps:', [ 'baz', 'bar' ] ],
-			   [ 'rules generated:', 0 ],
-			   [ 'TARGET: baz, forced=false' ],
-			   [ 'nothing to be done for \'baz\'' ],
-			   [ 'TARGET: bar, forced=true' ],
-			   [ 'TARGET: foo, forced=true' ] ])
+			   [ '\'foo\' deps:', [ 'baz', 'bar' ] ],
+			   [ 'nothing to be done for \'baz\'' ] ])
     })
 
     test('empty', function() {

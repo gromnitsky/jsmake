@@ -706,15 +706,13 @@ class Maker {
 	(this.goals.length ? this.goals : [this.default_goal()]).forEach( goal => {
 	    this.genrule(goal)
 	    let deps = this.deps(goal)
-	    this.log(1)
-	    this.log(1, `${goal} deps:`, deps)
-	    this.log(1, 'rules generated:', this.rules.generated.length)
-	    this.log(2, 'rules generated:', this.rules.generated)
+	    this.log(1, `'${goal}' deps:`, deps)
+	    this.log(2, `rules generated (${this.rules.generated.length}):\n`,
+		     this.rules.generated)
 
 	    let forced = false
 	    deps.reverse().concat(goal).forEach( (prereq, idx) => {
-		this.log(1)
-		this.log(1, `TARGET: ${prereq}, forced=${forced}`)
+		this.log(2, `TARGET: ${prereq}, forced=${forced}`)
 		// tell remake() that this target was the goal
 		let opt = conf
 		if (idx === deps.length) opt = Object.assign({ _last: 1 }, conf)
@@ -779,36 +777,27 @@ if (process.argv[1] === __filename) {
 
     let tokens = [].concat(...makefiles.map( file => tokenize_file(file)))
 	.concat(user_vars)
-    if (conf.verbose >= 4) console.error(tokens)
+    logger.write(3, "tokens:\n", tokens)
 
     let parser = new Parser(tokens)
     parser.parse()
-    if (conf.verbose >= 4) {
-	console.error(parser.vars)
-	console.error(parser.rules)
-	console.error('')
-    }
+    logger.write(3, "parsed vars:\n", parser.vars)
+    logger.write(3, "parsed rules:\n", parser.rules)
 
     let expander = new Expander(parser, Functions)
     expander.logger = logger
     expander.expand()
-    if (conf.verbose >= 3) {
-	console.error(parser.vars)
-	console.error(parser.rules)
-	console.error('')
-    }
+    logger.write(2, "expanded vars:\n", parser.vars)
+    logger.write(3, "expanded rules:\n", parser.rules)
 
     let maker = new Maker(parser, goals)
     maker.logger = logger
     maker.normalize()
-    logger.write(2, maker.rules, "\n")
-    if (!maker.default_goal()) {
-	logger.write(0, 'no targets')
-	process.exit(2)
-    }
+    logger.write(2, "normalized rules:\n", maker.rules)
+    if (!maker.default_goal()) err(2, 'no targets')
 
     logger.write(1, 'DEFAULT GOAL:', maker.default_goal())
-    logger.write(1, 'goals:', goals)
+    logger.write(1, 'CL goals:', goals)
 
     maker.recompile(conf)
 }
