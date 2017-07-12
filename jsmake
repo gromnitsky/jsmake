@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+// A light version of Make written in JavaScript.
+// (c) 2017 Alexander Gromnitsky, https://github.com/gromnitsky/jsmake
+
 let path = require('path')
 let fs = require('fs')
 let cp = require('child_process')
