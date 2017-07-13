@@ -710,8 +710,10 @@ class Maker {
 	return exp._expand(exp.parse(new Var(rule.location, 'dummy4', line)))
     }
 
+    allgoals() { return this.goals.length ? this.goals : [this.default_goal()] }
+
     recompile(conf = {}) {
-	(this.goals.length ? this.goals : [this.default_goal()]).forEach( goal => {
+	this.allgoals().forEach( goal => {
 	    this.genrule(goal)
 	    let deps = this.deps(goal)
 	    this.log(1, `'${goal}' deps:`, deps)
@@ -745,12 +747,29 @@ let err = function(exit_code, ...args) {
     process.exit(exit_code)
 }
 
+let graphviz = function(maker) {
+    let escape = (str) => '"' + str.replace(/"/g, '\\$&') + '"'
+    let out = process.stdout.write.bind(process.stdout)
+
+    out("digraph G {\n")
+    maker.allgoals().forEach( goal => {
+	maker.genrule(goal)
+	let deps = maker.deps(goal)
+	out("\t" + [goal].concat(deps).map(escape).join(' -> ') + ";\n")
+    })
+    maker.rules.generated.forEach( rule => {
+	out(`\t${escape(rule.target)} [shape=box];\n`)
+    })
+    out("}\n")
+}
+
 // Main
 if (process.argv[1] === __filename) {
     let conf = {
 	verbose: 0,
 	touch: false,
 	dry_run: false,
+	graphviz: false,
     }
 
     let makefiles = []
@@ -771,10 +790,12 @@ if (process.argv[1] === __filename) {
 	else if (opt === '-d') conf.verbose++
 	else if (opt === '-t') conf.touch = true
 	else if (opt === '-n') conf.dry_run = true
-	else if (opt === '-v') {
-	    console.log('0.0.1')
+	else if (opt === '-v') { console.log('0.0.1'); process.exit(0) }
+	else if (opt === '-h') {
+	    console.log('Usage: jsmake [-f file|-] [-tn] [-d] [-vh] [--graphviz] [name=val ...]')
 	    process.exit(0)
 	}
+	else if (opt === '--graphviz') conf.graphviz = true
 	else if (opt.indexOf('=') !== -1) { // FOO=bar
 	    user_vars = user_vars.concat(new FirstTokenizer(opt, 'cmd').tokenize())
 	} else goals.push(opt)
@@ -807,5 +828,5 @@ if (process.argv[1] === __filename) {
     logger.write(1, 'DEFAULT GOAL:', maker.default_goal())
     logger.write(1, 'CL goals:', goals)
 
-    maker.recompile(conf)
+    conf.graphviz ? graphviz(maker) : maker.recompile(conf)
 }
