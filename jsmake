@@ -272,6 +272,11 @@ class Expander {
     func() {
 	this.eat('$')
 
+	if (this.tok === '$') {	// double '$$' means a literal '$'
+	    this.advance()
+	    return new STNode('term', '$')
+	}
+
 	let single_char = this.tok[0] // $@, $<, etc
 	if (/[^$()]/.test(single_char)) {
 	    this.pushback(this.tok.slice(1))

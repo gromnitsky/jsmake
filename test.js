@@ -244,6 +244,16 @@ $(q):
         }])
     })
 
+    test('escape $', function() {
+	let exp = tokenize_parse_expand(`
+a = $$$(foo$$$(bar))$$(bar)
+foo$$123 = FOO
+bar = 123
+test: $(a)
+`)
+	assert.equal(exp.parser.rules[0].deps, '$FOO$(bar)')
+    })
+
     test('refs', function() {
 	let exp = tokenize_parse_expand(`
 dirs = $(dir  /foo/bar    /home/bob) $(bar)   $(dir /etc/news)
@@ -415,6 +425,14 @@ suite('Maker', function() {
 	let stem = make.Maker.stem
 	assert.equal(stem('pp-%', 'pp-files'), 'files')
 	assert.equal(stem('p/p-%', 'p/p-files'), 'files')
+    })
+
+    test('escape $', function() {
+	let r = tokenize_parse_expand_recompile(`
+test:
+	@echo '$$(SHELL)=$(SHELL)'
+`)
+	assert.deepEqual(r.stdout, [ "$(SHELL)=/bin/sh\n" ])
     })
 
     test('chain of implicits', function() {

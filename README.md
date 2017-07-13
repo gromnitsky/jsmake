@@ -64,20 +64,19 @@ in it, viz.:
 * archive members as targets
 * `$(wildcard)`
 * VPATH & vpath
-* parallel execution
+* a parallel execution
 
 Features that are missing temporarily:
 
-* all functions such as `$(notdir)`, `$(shell)`, etc; they're very
-  easy to add
-* escaping of '$' & '%'
+* all built-in functions such as `$(notdir)`, `$(shell)`, &c (they're
+  very easy to add)
 
 Features that are missing but should be added:
 
 * `include` directive
 * +=
 * `$(foreach)`, `$(call)`, `$(eval)`
-*
+* escape '%' in implicit rules & `$(patsubst)`
 
 Features that are missing that *may* be added:
 
