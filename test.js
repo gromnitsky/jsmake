@@ -476,6 +476,15 @@ foo: 1.2
 	}, /no rule to make target '1.2'/)
     })
 
+    test('glob', function() {
+	sh('touch 1.foo 2.foo 1.bar 2.bar')
+	let r = tokenize_parse_expand_recompile('*.foo: *.bar')
+	assert.deepEqual(r.maker.parser.rules[0].deps, '*.bar')
+	assert.equal(r.maker.default_goal(), '1.foo')
+	assert.deepEqual(r.maker.rules.normal['1.foo'].deps,
+			 ['1.bar', '2.bar'])
+    })
+
     test('override', function() {
 	let r = tokenize_parse_expand_recompile(`
 foo: bar

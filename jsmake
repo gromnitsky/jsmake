@@ -428,16 +428,17 @@ class Maker {
     default_goal() { return this.goals[0] || this._default_goal }
 
     glob(rule) {
-	let r = new Rule(rule.location, null, null, rule.recipes);
-	['target', 'deps'].forEach( attr => {
-	    r[attr] = str2list(rule[attr]).map( val => {
-		let r = cp.spawnSync(this.parser.vars.SHELL.value,
-				     ['-c', `echo ${val}`])
-		if (r.status !== 0) this.log(0, rule, `suspicious target: ${val}`)
-		return r.status !== 0 ? val : r.stdout.toString()
-	    }).join(' ')
-	})
-	return r
+	let pathnames = pat => {
+	    if (!/[?*\[~]/.test(pat)) return pat // glob is expensive
+	    this.log(1, rule, `globbing '${pat}'`)
+	    let r = cp.spawnSync(this.parser.vars.SHELL.value,
+				 ['-c', `echo ${pat}`])
+	    if (r.status !== 0) this.log(0, rule, `leery target '${pat}'`)
+	    return r.status !== 0 ? pat : r.stdout.toString()
+	}
+	let transform = str => str2list(str).map(pathnames).join(' ')
+	return new Rule(rule.location, transform(rule.target),
+			transform(rule.deps), rule.recipes)
     }
 
     normalize() {
