@@ -531,12 +531,10 @@ class Maker {
 		} else
 		    prereq = dep.replace('%', stem)
 
-		if (!fs.existsSync(prereq)) {
-		    candidate.rank -= 1
-		    if (!this.genrule(prereq)) { // recursion!
-			candidate.invalid = true
-			break
-		    }
+		if (!fs.existsSync(prereq)) candidate.rank -= 1
+		if (!(this.genrule(prereq) || fs.existsSync(prereq))) {
+		    candidate.invalid = true
+		    break
 		}
 		deps.push(prereq)
 	    }

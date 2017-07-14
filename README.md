@@ -11,10 +11,19 @@ $ jsmake -h
 Usage: jsmake [-f file|-] [-tn] [-d] [-vh] [--graphviz] [name=val ...]
 
 $ cat chain.mk
-convert = @echo convert $< to $@; touch $@
+convert = @echo create $< from $@; touch $@
 
-files = 1.4 1.3 1.2
+files = 1.7 1.6 1.5 1.4 1.3 1.2 1.1
 
+clean:
+	rm -f $(files)
+
+%.7: %.6
+	$(convert)
+%.6: %.5
+	$(convert)
+%.5: %.4
+	$(convert)
 %.4: %.3
 	$(convert)
 %.3: %.2
@@ -22,22 +31,32 @@ files = 1.4 1.3 1.2
 %.2: %.1
 	$(convert)
 
-clean:
-	rm -f $(files)
+1.1:
+	touch $@
 
 p-%:
 	@echo $($*) | tr ' ' \\n
 
-$ touch 1.1
-$ jsmake -f chain.mk 1.4
-convert 1.1 to 1.2
-convert 1.2 to 1.3
-convert 1.3 to 1.4
+$ jsmake -f chain.mk 1.7
+touch 1.1
+create 1.1 from 1.2
+create 1.2 from 1.3
+create 1.3 from 1.4
+create 1.4 from 1.5
+create 1.5 from 1.6
+create 1.6 from 1.7
 
-$ jsmake -f chain.mk 1.4
-jsmake: target '1.4' is up to date
+$ jsmake -f chain.mk 1.7
+jsmake: target '1.7' is up to date
+
+$ touch 1.5 && jsmake -f chain.mk 1.7
+create 1.5 from 1.6
+create 1.6 from 1.7
 
 $ jsmake -f chain.mk p-files
+1.7
+1.6
+1.5
 1.4
 1.3
 1.2
@@ -49,41 +68,11 @@ Pass `-d -d` (or even `-d -d -d`) for a great amount of introspection.
 
 Using the same `chain.mk` above:
 
-~~~
-$ jsmake -f chain.mk
-rm -f 1.4 1.3 1.2
-~~~
-
-	$ jsmake -f chain.mk 1.4 --graphviz | dot -Tpng -Grankdir=LR -Nwidth=0 -Nheight=0 | xv -
-![](http://ultraimg.com/images/2017/07/13/GOS9.png)
+	$ jsmake -f chain.mk 1.7 --graphviz | dot -Tpng -Grankdir=LR -Nwidth=0 -Nheight=0 | xv -
+![](http://ultraimg.com/images/2017/07/15/GPTz.png)
 
 The box-shaped vertices denote the targets generated from the implicit
 rules.
-
-It makes sense to draw a graph from a clean slate, for if some targets
-have been previously built, jsmake "optimizes" the resulting graph via
-omitting the existing vertices; e.g. if,
-
-~~~
-$ ls 1.*
-1.1
-
-$ jsmake -f chain.mk 1.4
-convert 1.1 to 1.2
-convert 1.2 to 1.3
-convert 1.3 to 1.4
-
-$ ls 1.*
-1.1  1.2  1.3  1.4
-~~~
-
-then the diagram will look different:
-
-	$ jsmake -f chain.mk 1.4 1.1 --graphviz | dot -Tpng -Grankdir=LR -Nwidth=0 -Nheight=0 | xv -
-![](http://ultraimg.com/images/2017/07/13/GOgQ.png)
-
-As file `1.2` is already here, there is no need to generate `1.2: 1.1`
-rule.
 
 ## What it's not
 
