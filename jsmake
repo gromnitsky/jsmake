@@ -8,14 +8,13 @@ let fs = require('fs')
 let cp = require('child_process')
 
 class Location {
-    constructor(src, line, col, row) {
+    constructor(src, line, col1, col2) {
 	this.src = src || '-'
-	this.line = line || -999
-	this.col = col
-	this.row = row
+	this.line = line || -1;
+	[this.col1, this.col2] = [col1, col2] // occupied positions
     }
     toString() {
-	return [this.src, this.line, this.col, this.row].
+	return [this.src, this.line, this.col1, this.col2].
 	    filter( v => v !== undefined).join(':')
     }
 }
@@ -86,8 +85,8 @@ class Rule {
     constructor(location, target, deps = '', recipes = []) {
 	this.location = location
 	if (location) {
-	    delete this.location.col
-	    delete this.location.row
+	    delete this.location.col1
+	    delete this.location.col2
 	}
 	this.target = target
 	this.deps = deps || ''
@@ -103,8 +102,8 @@ class Var {
     constructor(location, name, value = '') {
 	this.location = location
 	if (location) {
-	    delete this.location.col
-	    delete this.location.row
+	    delete this.location.col1
+	    delete this.location.col2
 	}
 	this.name = name
 	this.value = value
