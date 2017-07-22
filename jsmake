@@ -762,7 +762,7 @@ let graphviz = function(maker) {
 }
 
 // Main
-if (process.argv[1] === __filename) {
+if (fs.realpathSync(process.argv[1]) === __filename) {
     let conf = {
 	verbose: 0,
 	touch: false,
@@ -799,7 +799,7 @@ if (process.argv[1] === __filename) {
 	} else goals.push(opt)
     }
 
-    if (!makefiles.length) err(2, 'no makefile found')
+    if (!makefiles.length) makefiles.push('Makefile')
     let logger = new Logger(conf.verbose, 'jsmake')
 
     let tokens = [].concat(...makefiles.map( file => tokenize_file(file)))
